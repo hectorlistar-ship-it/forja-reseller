@@ -1,0 +1,541 @@
+import { Db } from './client';
+import { encryptSecret, decryptSecret } from '../crypto';
+import type { Env } from '../config';
+
+// ============================================
+// RESELLERS
+// ============================================
+
+export async function createReseller(db: Db, data: {
+  username: string;
+  passwordHash: string;
+  plan?: string;
+  maxStores?: number;
+}) {
+  return db.run(
+    `INSERT INTO resellers (username, password_hash, plan, max_stores) VALUES (?, ?, ?, ?)`,
+    [data.username, data.passwordHash, data.plan || 'basic', data.maxStores || 1]
+  );
+}
+
+export async function getResellerByUsername(db: Db, username: string) {
+  return db.first<{ id: number; username: string; password_hash: string; plan: string; max_stores: number; status: string }>(
+    `SELECT * FROM resellers WHERE username = ?`,
+    [username.toLowerCase()]
+  );
+}
+
+export async function getResellerById(db: Db, id: number) {
+  return db.first(`SELECT * FROM resellers WHERE id = ?`, [id]);
+}
+
+export async function listResellers(db: Db, status?: string) {
+  let sql = `SELECT * FROM resellers`;
+  const params: any[] = [];
+  if (status) {
+    sql += ` WHERE status = ?`;
+    params.push(status);
+  }
+  sql += ` ORDER BY created_at DESC`;
+  return db.all(sql, params);
+}
+
+export async function updateReseller(db: Db, id: number, data: Partial<{
+  passwordHash: string;
+  plan: string;
+  maxStores: number;
+  status: string;
+}>) {
+  const fields: string[] = [];
+  const values: any[] = [];
+  
+  if (data.passwordHash) { fields.push('password_hash = ?'); values.push(data.passwordHash); }
+  if (data.plan) { fields.push('plan = ?'); values.push(data.plan); }
+  if (data.maxStores) { fields.push('max_stores = ?'); values.push(data.maxStores); }
+  if (data.status) { fields.push('status = ?'); values.push(data.status); }
+  
+  if (fields.length === 0) return { success: true, meta: { changes: 0 } };
+  
+  fields.push('updated_at = ?');
+  values.push(Math.floor(Date.now() / 1000));
+  values.push(id);
+  
+  return db.run(`UPDATE resellers SET ${fields.join(', ')} WHERE id = ?`, values);
+}
+
+// ============================================
+// STORES
+// ============================================
+
+export async function createStore(db: Db, data: {
+  resellerId: number;
+  slug: string;
+  name: string;
+  walletBinance?: string;
+}) {
+  return db.run(
+    `INSERT INTO stores (reseller_id, slug, name, wallet_binance) VALUES (?, ?, ?, ?)`,
+    [data.resellerId, data.slug, data.name, data.walletBinance || null]
+  );
+}
+
+export async function getStoreBySlug(db: Db, slug: string) {
+  return db.first(`SELECT * FROM stores WHERE slug = ?`, [slug]);
+}
+
+export async function getStoreById(db: Db, id: number) {
+  return db.first(`SELECT * FROM stores WHERE id = ?`, [id]);
+}
+
+export async function getStoresByReseller(db: Db, resellerId: number) {
+  return db.all(`SELECT * FROM stores WHERE reseller_id = ? ORDER BY created_at DESC`, [resellerId]);
+}
+
+export async function countStoresByReseller(db: Db, resellerId: number): Promise<number> {
+  const row = await db.first<{ c: number }>(
+    `SELECT COUNT(*) as c FROM stores WHERE reseller_id = ? AND status != 'deleted'`,
+    [resellerId]
+  );
+  return row?.c ?? 0;
+}
+
+export async function countAccountsByStore(db: Db, storeId: number): Promise<number> {
+  const row = await db.first<{ c: number }>(
+    `SELECT COUNT(*) as c FROM accounts WHERE store_id = ?`,
+    [storeId]
+  );
+  return row?.c ?? 0;
+}
+
+export async function updateStore(db: Db, id: number, data: Partial<{
+  name: string;
+  walletBinance: string;
+  configJson: string;
+  status: string;
+}>) {
+  const fields: string[] = [];
+  const values: any[] = [];
+  
+  if (data.name) { fields.push('name = ?'); values.push(data.name); }
+  if (data.walletBinance !== undefined) { fields.push('wallet_binance = ?'); values.push(data.walletBinance); }
+  if (data.configJson) { fields.push('config_json = ?'); values.push(data.configJson); }
+  if (data.status) { fields.push('status = ?'); values.push(data.status); }
+  
+  if (fields.length === 0) return { success: true, meta: { changes: 0 } };
+  
+  fields.push('updated_at = ?');
+  values.push(Math.floor(Date.now() / 1000));
+  values.push(id);
+  
+  return db.run(`UPDATE stores SET ${fields.join(', ')} WHERE id = ?`, values);
+}
+
+// ============================================
+// PLATFORMS
+// ============================================
+
+export async function listPlatforms(db: Db, activeOnly = true) {
+  let sql = `SELECT * FROM platforms`;
+  if (activeOnly) sql += ` WHERE is_active = 1`;
+  sql += ` ORDER BY sort_order, name`;
+  return db.all(sql);
+}
+
+export async function getPlatform(db: Db, key: string) {
+  return db.first(`SELECT * FROM platforms WHERE key = ?`, [key]);
+}
+
+export async function upsertPlatform(db: Db, data: {
+  key: string;
+  name: string;
+  type: string;
+  icon?: string;
+  costPrice: number;
+  salePrice: number;
+  isActive?: number;
+  sortOrder?: number;
+}) {
+  return db.run(
+    `INSERT INTO platforms (key, name, type, icon, cost_price_usd, sale_price_usd, is_active, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       name = excluded.name,
+       type = excluded.type,
+       icon = excluded.icon,
+       cost_price_usd = excluded.cost_price_usd,
+       sale_price_usd = excluded.sale_price_usd,
+       is_active = excluded.is_active,
+       sort_order = excluded.sort_order`,
+    [data.key, data.name, data.type, data.icon || null, data.costPrice, data.salePrice, data.isActive ?? 1, data.sortOrder ?? 0]
+  );
+}
+
+// Store platform overrides
+export async function setStorePlatformPrice(db: Db, storeId: number, platformKey: string, costPrice?: number, salePrice?: number, isActive = 1) {
+  return db.run(
+    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(store_id, platform_key) DO UPDATE SET
+       cost_price_usd = excluded.cost_price_usd,
+       sale_price_usd = excluded.sale_price_usd,
+       is_active = excluded.is_active`,
+    [storeId, platformKey, costPrice ?? null, salePrice ?? null, isActive]
+  );
+}
+
+export async function getStorePlatforms(db: Db, storeId: number) {
+  return db.all(
+    `SELECT sp.*, p.name, p.type, p.icon
+     FROM store_platforms sp
+     JOIN platforms p ON sp.platform_key = p.key
+     WHERE sp.store_id = ? AND sp.is_active = 1 AND p.is_active = 1
+     ORDER BY p.sort_order, p.name`,
+    [storeId]
+  );
+}
+
+// ============================================
+// ACCOUNTS (INVENTORY)
+// ============================================
+
+export interface AccountInput {
+  email: string;
+  password: string;
+  notes?: string;
+}
+
+export async function addAccounts(db: Db, env: Env, storeId: number, platformKey: string, accounts: AccountInput[]) {
+  if (accounts.length === 0) return { added: 0 };
+
+  const now = Math.floor(Date.now() / 1000);
+  const sql = `INSERT INTO accounts (store_id, platform_key, email, password, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)`;
+
+  const statements = await Promise.all(accounts.map(async acc => {
+    const encryptedPassword = await encryptSecret(env, acc.password);
+    return { sql, params: [storeId, platformKey, acc.email, encryptedPassword, acc.notes || null, now] };
+  }));
+
+  await db.batch(statements);
+  return { added: accounts.length };
+}
+
+// Decrypts an account's password for delivery to the buyer / admin.
+export async function decryptAccountPassword(env: Env, encryptedPassword: string): Promise<string> {
+  return decryptSecret(env, encryptedPassword);
+}
+
+export async function getAvailableAccounts(db: Db, storeId: number, platformKey: string, limit = 1) {
+  return db.all(
+    `SELECT * FROM accounts 
+     WHERE store_id = ? AND platform_key = ? AND sold = 0 
+     ORDER BY created_at ASC LIMIT ?`,
+    [storeId, platformKey, limit]
+  );
+}
+
+export async function getInventorySummary(db: Db, storeId: number) {
+  return db.all(
+    `SELECT platform_key, 
+            COUNT(*) as total,
+            SUM(CASE WHEN sold = 0 THEN 1 ELSE 0 END) as available,
+            SUM(CASE WHEN sold = 1 THEN 1 ELSE 0 END) as sold
+     FROM accounts 
+     WHERE store_id = ? 
+     GROUP BY platform_key`,
+    [storeId]
+  );
+}
+
+export async function getAccountById(db: Db, id: number) {
+  return db.first(`SELECT * FROM accounts WHERE id = ?`, [id]);
+}
+
+export async function markAccountSold(db: Db, accountId: number, clientId: number, orderId: number) {
+  const now = Math.floor(Date.now() / 1000);
+  return db.run(
+    `UPDATE accounts SET sold = 1, sold_at = ?, client_id = ?, order_id = ? WHERE id = ?`,
+    [now, clientId, orderId, accountId]
+  );
+}
+
+// ============================================
+// CLIENTS
+// ============================================
+
+export async function createClient(db: Db, data: {
+  storeId: number;
+  username: string;
+  passwordHash: string;
+  email?: string;
+}) {
+  return db.run(
+    `INSERT INTO clients (store_id, username, password_hash, email) VALUES (?, ?, ?, ?)`,
+    [data.storeId, data.username.toLowerCase(), data.passwordHash, data.email || null]
+  );
+}
+
+export async function getClientByUsername(db: Db, storeId: number, username: string) {
+  return db.first(
+    `SELECT * FROM clients WHERE store_id = ? AND username = ?`,
+    [storeId, username.toLowerCase()]
+  );
+}
+
+export async function getClientById(db: Db, id: number) {
+  return db.first(`SELECT * FROM clients WHERE id = ?`, [id]);
+}
+
+export async function getClientsByStore(db: Db, storeId: number) {
+  return db.all(`SELECT * FROM clients WHERE store_id = ? ORDER BY created_at DESC`, [storeId]);
+}
+
+export async function updateClient(db: Db, id: number, data: Partial<{
+  passwordHash: string;
+  email: string;
+  status: string;
+}>) {
+  const fields: string[] = [];
+  const values: any[] = [];
+  
+  if (data.passwordHash) { fields.push('password_hash = ?'); values.push(data.passwordHash); }
+  if (data.email !== undefined) { fields.push('email = ?'); values.push(data.email); }
+  if (data.status) { fields.push('status = ?'); values.push(data.status); }
+  
+  if (fields.length === 0) return { success: true, meta: { changes: 0 } };
+  
+  values.push(id);
+  return db.run(`UPDATE clients SET ${fields.join(', ')} WHERE id = ?`, values);
+}
+
+export async function updateClientLogin(db: Db, id: number) {
+  return db.run(
+    `UPDATE clients SET last_login_at = ? WHERE id = ?`,
+    [Math.floor(Date.now() / 1000), id]
+  );
+}
+
+// ============================================
+// ORDERS
+// ============================================
+
+export interface OrderInput {
+  storeId: number;
+  clientId: number;
+  platformKey: string;
+  accountId: number;
+  priceUsd: number;
+  costUsd: number;
+  binancePaymentId?: number;
+}
+
+export async function createOrder(db: Db, data: OrderInput) {
+  const profit = data.priceUsd - data.costUsd;
+  return db.run(
+    `INSERT INTO orders (store_id, client_id, platform_key, account_id, price_usd, cost_usd, profit_usd, binance_payment_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [data.storeId, data.clientId, data.platformKey, data.accountId, data.priceUsd, data.costUsd, profit, data.binancePaymentId || null]
+  );
+}
+
+export async function getOrdersByStore(db: Db, storeId: number, limit = 100) {
+  return db.all(
+    `SELECT o.*, c.username as client_username, p.name as platform_name
+     FROM orders o
+     JOIN clients c ON o.client_id = c.id
+     JOIN platforms p ON o.platform_key = p.key
+     WHERE o.store_id = ?
+     ORDER BY o.created_at DESC LIMIT ?`,
+    [storeId, limit]
+  );
+}
+
+export async function getOrdersByClient(db: Db, clientId: number) {
+  return db.all(
+    `SELECT o.*, p.name as platform_name, p.icon as platform_icon
+     FROM orders o
+     JOIN platforms p ON o.platform_key = p.key
+     WHERE o.client_id = ?
+     ORDER BY o.created_at DESC`,
+    [clientId]
+  );
+}
+
+// ============================================
+// BINANCE PAYMENTS
+// ============================================
+
+export interface BinancePaymentInput {
+  storeId: number;
+  clientId?: number;
+  binanceUser: string;
+  usdtAmount: number;
+  expectedAmount?: number;
+  rawEmail?: string;
+}
+
+export async function createBinancePayment(db: Db, data: BinancePaymentInput) {
+  return db.run(
+    `INSERT INTO binance_payments (store_id, client_id, binance_user, usdt_amount, expected_amount, raw_email)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [data.storeId, data.clientId || null, data.binanceUser, data.usdtAmount, data.expectedAmount || null, data.rawEmail || null]
+  );
+}
+
+export async function getBinancePayment(db: Db, id: number) {
+  return db.first(`SELECT * FROM binance_payments WHERE id = ?`, [id]);
+}
+
+export async function getPendingPayments(db: Db, storeId: number) {
+  return db.all(
+    `SELECT * FROM binance_payments WHERE store_id = ? AND status = 'pending' ORDER BY created_at ASC`,
+    [storeId]
+  );
+}
+
+export async function verifyBinancePayment(db: Db, id: number, clientId: number, status: 'verified' | 'failed') {
+  const now = Math.floor(Date.now() / 1000);
+  return db.run(
+    `UPDATE binance_payments SET status = ?, verified_at = ?, client_id = ? WHERE id = ?`,
+    [status, now, clientId, id]
+  );
+}
+
+// ============================================
+// SESSIONS
+// ============================================
+
+export async function createSession(db: Db, data: {
+  id: string; // jti
+  storeId?: number; // 0 for superadmin/reseller, which aren't store-scoped
+  userType: 'superadmin' | 'reseller' | 'client';
+  userId: number;
+  expiresAt: number;
+}) {
+  return db.run(
+    `INSERT INTO sessions (id, store_id, user_type, user_id, expires_at) VALUES (?, ?, ?, ?, ?)`,
+    [data.id, data.storeId ?? null, data.userType, data.userId, data.expiresAt]
+  );
+}
+
+export async function getSession(db: Db, id: string) {
+  return db.first(
+    `SELECT * FROM sessions WHERE id = ? AND revoked = 0 AND expires_at > ?`,
+    [id, Math.floor(Date.now() / 1000)]
+  );
+}
+
+export async function revokeSession(db: Db, id: string) {
+  return db.run(`UPDATE sessions SET revoked = 1 WHERE id = ?`, [id]);
+}
+
+export async function revokeAllUserSessions(db: Db, userType: string, userId: number) {
+  return db.run(`UPDATE sessions SET revoked = 1 WHERE user_type = ? AND user_id = ?`, [userType, userId]);
+}
+
+export async function cleanupExpiredSessions(db: Db) {
+  return db.run(`DELETE FROM sessions WHERE expires_at < ? OR revoked = 1`, [Math.floor(Date.now() / 1000)]);
+}
+
+// ============================================
+// RATE LIMITS
+// ============================================
+
+export async function checkRateLimit(db: Db, key: string, limit: number, windowMs: number): Promise<{ allowed: boolean; remaining: number }> {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  
+  const existing = await db.first<{ count: number; window_start: number; blocked_until: number }>(
+    `SELECT * FROM rate_limits WHERE key = ?`, [key]
+  );
+  
+  if (existing) {
+    if (existing.blocked_until && existing.blocked_until > now) {
+      return { allowed: false, remaining: 0 };
+    }
+    
+    if (existing.window_start < windowStart) {
+      // New window
+      await db.run(
+        `UPDATE rate_limits SET count = 1, window_start = ?, blocked_until = 0 WHERE key = ?`,
+        [now, key]
+      );
+      return { allowed: true, remaining: limit - 1 };
+    }
+    
+    if (existing.count >= limit) {
+      await db.run(
+        `UPDATE rate_limits SET blocked_until = ? WHERE key = ?`,
+        [now + windowMs, key]
+      );
+      return { allowed: false, remaining: 0 };
+    }
+    
+    await db.run(
+      `UPDATE rate_limits SET count = count + 1 WHERE key = ?`,
+      [key]
+    );
+    return { allowed: true, remaining: limit - existing.count - 1 };
+  } else {
+    await db.run(
+      `INSERT INTO rate_limits (key, count, window_start) VALUES (?, 1, ?)`,
+      [key, now]
+    );
+    return { allowed: true, remaining: limit - 1 };
+  }
+}
+
+// ============================================
+// STATS
+// ============================================
+
+export async function getSuperAdminStats(db: Db) {
+  const [resellers, stores, accounts, clients, orders] = await Promise.all([
+    db.first(`SELECT COUNT(*) as c FROM resellers WHERE status = 'active'`),
+    db.first(`SELECT COUNT(*) as c FROM stores WHERE status = 'active'`),
+    db.first(`SELECT COUNT(*) as c FROM accounts WHERE sold = 0`),
+    db.first(`SELECT COUNT(*) as c FROM clients`),
+    db.first(`SELECT COUNT(*) as c FROM orders`),
+  ]);
+  
+  return {
+    total_resellers: resellers?.c ?? 0,
+    total_stores: stores?.c ?? 0,
+    total_accounts: accounts?.c ?? 0,
+    total_clients: clients?.c ?? 0,
+    total_orders: orders?.c ?? 0,
+  };
+}
+
+export async function getStoreStats(db: Db, storeId: number) {
+  const [accounts, clients, orders, revenue, profit] = await Promise.all([
+    db.first(`SELECT COUNT(*) as c FROM accounts WHERE store_id = ? AND sold = 0`, [storeId]),
+    db.first(`SELECT COUNT(*) as c FROM clients WHERE store_id = ?`, [storeId]),
+    db.first(`SELECT COUNT(*) as c FROM orders WHERE store_id = ?`, [storeId]),
+    db.first(`SELECT COALESCE(SUM(price_usd), 0) as total FROM orders WHERE store_id = ?`, [storeId]),
+    db.first(`SELECT COALESCE(SUM(profit_usd), 0) as total FROM orders WHERE store_id = ?`, [storeId]),
+  ]);
+  
+  return {
+    stock_available: accounts?.c ?? 0,
+    total_clients: clients?.c ?? 0,
+    total_orders: orders?.c ?? 0,
+    total_revenue: revenue?.total ?? 0,
+    total_profit: profit?.total ?? 0,
+  };
+}
+
+// ============================================
+// SETTINGS
+// ============================================
+
+export async function getGlobalSetting(db: Db, key: string) {
+  return db.first(`SELECT value FROM global_settings WHERE key = ?`, [key]);
+}
+
+export async function setGlobalSetting(db: Db, key: string, value: string) {
+  return db.run(
+    `INSERT INTO global_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    [key, value]
+  );
+}

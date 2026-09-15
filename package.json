@@ -1,0 +1,13 @@
+{
+  "name": "forja-reseller",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "binance-bridge"
+  ],
+  "scripts": {
+    "bridge:dev": "npm run dev --workspace=binance-bridge",
+    "bridge:build": "npm run build --workspace=binance-bridge",
+    "bridge:install": "npm install --workspace=binance-bridge"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "forja-reseller-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:pages": "wrangler pages deploy ../store-frontend/dist --project-name=reseller-store",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "db:local": "wrangler d1 execute forja-reseller --local --file=./migrations/0001_initial.sql",
+    "db:remote": "wrangler d1 execute forja-reseller --remote --file=./migrations/0001_initial.sql",
+    "db:generate": "wrangler d1 migrations create forja-reseller"
+  },
+  "dependencies": {
+    "hono": "^4.5.0",
+    "jose": "^5.2.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240501.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.5.0",
+    "wrangler": "^3.50.0"
+  }
+}

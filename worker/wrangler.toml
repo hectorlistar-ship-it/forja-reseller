@@ -1,0 +1,27 @@
+name = "forja-reseller"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+BOT_NAME = "Asistente"
+BUSINESS_NAME = "1NEGOCIOENWEB"
+BOT_LANGUAGE = "es-MX"
+BUFFER_SECONDS = "15"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "forja-reseller"
+database_id = "your-d1-database-id-here"
+
+# Secrets (set via: wrangler secret put SECRET_NAME)
+# TELEGRAM_BOT_TOKEN
+# DASHBOARD_PASSWORD
+# BRIDGE_TOKEN
+# JWT_SECRET
+# GMAIL_USER
+# GMAIL_APP_PASSWORD
+# ENCRYPTION_KEY        (32 random bytes, base64 - e.g. `openssl rand -base64 32`)
+# TELEGRAM_ADMIN_CHAT_ID
