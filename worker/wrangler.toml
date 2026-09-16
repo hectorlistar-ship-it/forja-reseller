@@ -2,6 +2,7 @@ name = "forja-reseller"
 main = "src/index.ts"
 compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
+account_id = "91fa55eaae4ace9b17638f75006e1b7e"
 
 [vars]
 ENVIRONMENT = "production"
@@ -14,7 +15,7 @@ BUFFER_SECONDS = "15"
 [[d1_databases]]
 binding = "DB"
 database_name = "forja-reseller"
-database_id = "your-d1-database-id-here"
+database_id = "3a5a237a-dbcb-4bf6-85cf-4d935cc396e5"
 
 # Secrets (set via: wrangler secret put SECRET_NAME)
 # TELEGRAM_BOT_TOKEN
