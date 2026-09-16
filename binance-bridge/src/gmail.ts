@@ -24,17 +24,29 @@ export async function verifyPayments(): Promise<UnreadEmail[]> {
   try {
     const lock = await client.getMailboxLock('INBOX');
     try {
-      const uids = await client.search({ from: 'noreply@binance.com', seen: false }, { uid: true });
+      // Binance sends payment emails from several subdomains
+      // (donotreply@directmail.binance.com, do-not-reply@ses.binance.com, ...),
+      // so match the whole domain and filter by subject below.
+      const uids = await client.search({ from: 'binance.com', seen: false }, { uid: true });
       if (uids === false) return [];
+
+      const PAYMENT_SUBJECT = /pago recibido|payment received|pago completado|payment completed/i;
 
       const emails: UnreadEmail[] = [];
       for (const uid of uids) {
         try {
-          const msg = await client.fetchOne(uid, { source: true, uid: true });
+          const msg = await client.fetchOne(uid, { source: true, uid: true, envelope: true });
           if (!msg || !msg.source) continue;
+
+          const subject = msg.envelope?.subject || '';
+          if (!PAYMENT_SUBJECT.test(subject)) {
+            // Skip marketing / non-payment emails without marking them as read
+            continue;
+          }
+
           const parsed = await simpleParser(msg.source);
           const body = parsed.text || parsed.html || '';
-          emails.push({ storeId: 'default', clientId: 'default', body });
+          emails.push({ storeId: process.env.STORE_ID || 'default', clientId: 'default', body });
           await client.messageFlagsAdd(uid, ['\\Seen']);
         } catch (err) {
           console.error('[gmail] Error reading email uid', uid, ':', err);

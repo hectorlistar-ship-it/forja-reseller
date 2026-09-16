@@ -9,10 +9,10 @@ importers:
   .:
     dependencies:
       hono:
-        specifier: ^4.5.0
+        specifier: ^4.13.7
         version: 4.13.7
       jose:
-        specifier: ^5.2.0
+        specifier: ^5.10.0
         version: 5.10.0
       zod:
         specifier: ^3.22.0

@@ -84,9 +84,9 @@ storeRoutes.post('/buy', ...clientAuth, async (c) => {
   }
 
   const paymentResult = await db.run(
-    `INSERT INTO binance_payments (store_id, client_id, binance_user, usdt_amount, expected_amount, status)
-     VALUES (?, ?, ?, ?, ?, 'pending')`,
-    [storeId, user.userId, binance_user, platform.sale_price_usd, platform.sale_price_usd]
+    `INSERT INTO binance_payments (store_id, client_id, binance_user, usdt_amount, expected_amount, platform_key, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+    [storeId, user.userId, binance_user, platform.sale_price_usd, platform.sale_price_usd, platform_key]
   );
 
   const paymentId = paymentResult.meta.last_row_id;

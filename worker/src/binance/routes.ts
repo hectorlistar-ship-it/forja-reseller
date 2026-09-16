@@ -19,19 +19,33 @@ binanceRoutes.post('/callback', async (c) => {
   const body = await c.req.json();
   
   const { store_id, client_id, binance_user, usdt_amount, status, raw_email } = body;
-  
-  if (!store_id || !binance_user || !usdt_amount || status !== 'verified') {
+
+  if (!binance_user || !usdt_amount || status !== 'verified') {
     return c.json({ error: 'Datos incompletos o estado no verificado' }, 400);
   }
-  
-  // Find pending payment matching this binance_user and amount
-  const payment = await db.first(
-    `SELECT * FROM binance_payments 
-     WHERE store_id = ? AND binance_user = ? AND usdt_amount = ? AND status = 'pending'
-     ORDER BY created_at DESC LIMIT 1`,
-    [store_id, binance_user, usdt_amount]
-  );
-  
+
+  // Find the pending payment matching this binance_user + amount.
+  // The bridge only knows the Gmail inbox, not which store the payment belongs
+  // to, so match globally; if a numeric store_id is provided, prefer it.
+  const storeIdNum = Number(store_id);
+  let payment: any = null;
+  if (Number.isInteger(storeIdNum) && storeIdNum > 0) {
+    payment = await db.first(
+      `SELECT * FROM binance_payments
+       WHERE store_id = ? AND LOWER(binance_user) = LOWER(?) AND ABS(usdt_amount - ?) < 0.01 AND status = 'pending'
+       ORDER BY created_at DESC LIMIT 1`,
+      [storeIdNum, binance_user, usdt_amount]
+    );
+  }
+  if (!payment) {
+    payment = await db.first(
+      `SELECT * FROM binance_payments
+       WHERE LOWER(binance_user) = LOWER(?) AND ABS(usdt_amount - ?) < 0.01 AND status = 'pending'
+       ORDER BY created_at DESC LIMIT 1`,
+      [binance_user, usdt_amount]
+    );
+  }
+
   if (!payment) {
     // No matching pending payment - log for manual review
     console.log('[binance] No matching pending payment:', { store_id, binance_user, usdt_amount });
@@ -60,14 +74,17 @@ binanceRoutes.post('/callback', async (c) => {
   // Update payment as verified
   await queries.verifyBinancePayment(db, payment.id, clientId || 0, 'verified');
   
+  if (!payment.platform_key) {
+    console.error('[binance] Pending payment has no platform_key:', payment.id);
+    return c.json({ message: 'Pago verificado pero la orden no especifica plataforma', ok: true });
+  }
+
   // Now find available account and complete order
   const account = await db.first(
     `SELECT * FROM accounts 
-     WHERE store_id = ? AND platform_key = (
-       SELECT platform_key FROM binance_payments WHERE id = ?
-     ) AND sold = 0
+     WHERE store_id = ? AND platform_key = ? AND sold = 0
      ORDER BY created_at ASC LIMIT 1`,
-    [payment.store_id, payment.id]
+    [payment.store_id, payment.platform_key]
   );
   
   if (!account) {
@@ -80,8 +97,8 @@ binanceRoutes.post('/callback', async (c) => {
     `SELECT sp.sale_price_usd, sp.cost_price_usd, p.name
      FROM store_platforms sp
      JOIN platforms p ON sp.platform_key = p.key
-     WHERE sp.store_id = ? AND sp.platform_key = (SELECT platform_key FROM binance_payments WHERE id = ?)`,
-    [payment.store_id, payment.id]
+     WHERE sp.store_id = ? AND sp.platform_key = ?`,
+    [payment.store_id, payment.platform_key]
   );
   
   if (!platform) {

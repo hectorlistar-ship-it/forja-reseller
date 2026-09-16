@@ -14,8 +14,8 @@
     "db:generate": "wrangler d1 migrations create forja-reseller"
   },
   "dependencies": {
-    "hono": "^4.5.0",
-    "jose": "^5.2.0",
+    "hono": "^4.13.7",
+    "jose": "^5.10.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {

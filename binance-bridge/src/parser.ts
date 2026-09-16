@@ -26,11 +26,19 @@ export function parseBinanceEmail(body: string): ParsedPayment | null {
   
   // Extract binance user - try multiple patterns
   let binanceUser: string | null = null;
-  
+
+  // Pattern 0: "Remitente:" / "Sender:" label (real Binance Pay format, no @)
+  const senderMatch = body.match(/remitente\s*:\s*([^\r\n]+)|sender\s*:\s*([^\r\n]+)/i);
+  if (senderMatch) {
+    binanceUser = (senderMatch[1] || senderMatch[2] || '').trim();
+  }
+
   // Pattern 1: @username in email
-  const userMatch = body.match(USER_REGEX);
-  if (userMatch) {
-    binanceUser = userMatch[1];
+  if (!binanceUser) {
+    const userMatch = body.match(USER_REGEX);
+    if (userMatch) {
+      binanceUser = userMatch[1];
+    }
   }
   
   // Pattern 2: "Usuario: username" or "User: username"
@@ -53,10 +61,17 @@ export function parseBinanceEmail(body: string): ParsedPayment | null {
     console.warn('[parser] No binance user found in email');
     return null;
   }
+
+  // Normalize: strip a leading @ and surrounding whitespace
+  binanceUser = binanceUser.replace(/^@/, '').trim();
+  if (!binanceUser) {
+    console.warn('[parser] Empty binance user after normalization');
+    return null;
+  }
   
-  // Extract timestamp
-  const timestampMatch = body.match(/(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2})/);
-  const timestamp = timestampMatch ? timestampMatch[1] : new Date().toISOString();
+  // Extract timestamp (ISO format used by Binance: 2026-09-15 12:35:23, or DD/MM/YYYY)
+  const timestampMatch = body.match(/(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2})|(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2})/);
+  const timestamp = timestampMatch ? (timestampMatch[1] || timestampMatch[2]) : new Date().toISOString();
   
   return {
     binanceUser,
