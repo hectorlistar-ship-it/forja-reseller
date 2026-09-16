@@ -6,7 +6,7 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "playwright:install": "playwright install chromium"
+    "playwright:install": "npx playwright-core install chromium"
   },
   "dependencies": {
     "express": "^4.19.2",
