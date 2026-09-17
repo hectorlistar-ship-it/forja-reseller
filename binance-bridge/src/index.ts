@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { verifyPayments } from './gmail.js';
+import { verifyPayments, markEmailsSeen } from './gmail.js';
 import { parseBinanceEmail } from './parser.js';
 import { sendCallback } from './worker-client.js';
 
@@ -48,18 +48,29 @@ async function pollLoop() {
   isPolling = true;
   try {
     const payments = await verifyPayments();
+    const seenUids: number[] = [];
     for (const p of payments) {
       const parsed = parseBinanceEmail(p.body);
-      if (parsed) {
-        await sendCallback(WORKER_CALLBACK_URL, BRIDGE_TOKEN, {
-          store_id: p.storeId,
-          client_id: p.clientId,
-          binance_user: parsed.binanceUser,
-          usdt_amount: parsed.amount,
-          status: 'verified',
-          raw_email: p.body
-        });
+      if (!parsed) {
+        // Unparseable — mark as seen so we don't reprocess it
+        seenUids.push(p.uid);
+        continue;
       }
+      const res = await sendCallback(WORKER_CALLBACK_URL, BRIDGE_TOKEN, {
+        store_id: p.storeId,
+        client_id: p.clientId,
+        binance_user: parsed.binanceUser,
+        usdt_amount: parsed.amount,
+        status: 'verified',
+        raw_email: p.body
+      });
+      if (res.ok) seenUids.push(p.uid);
+    }
+    // Mark emails as read only after all callbacks finished
+    if (seenUids.length > 0) {
+      await markEmailsSeen(seenUids).catch((err) =>
+        console.error('[poll] Error marking emails as read:', err)
+      );
     }
   } catch (err) {
     console.error('[poll] error:', err);

@@ -13,7 +13,14 @@ export async function sendCallback(
   payload: CallbackPayload
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const response = await fetch(`${workerUrl.replace(/\/$/, '')}/api/binance/callback`, {
+    // WORKER_CALLBACK_URL may or may not already include the /api/binance/callback
+    // path (it's set in Render with the full path). Avoid double-appending it.
+    const base = workerUrl.replace(/\/$/, '');
+    const endpoint = base.endsWith('/api/binance/callback')
+      ? base
+      : `${base}/api/binance/callback`;
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
