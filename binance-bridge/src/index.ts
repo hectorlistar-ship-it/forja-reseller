@@ -2,7 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import { verifyPayments, markEmailsSeen } from './gmail.js';
 import { parseBinanceEmail } from './parser.js';
-import { sendCallback } from './worker-client.js';
+import { sendCallback, fetchMailboxes } from './worker-client.js';
+import type { MailBox } from './worker-client.js';
 
 const app = express();
 app.use(express.json());
@@ -31,15 +32,57 @@ app.get('/health', (_req, res) => {
 });
 
 // Manual trigger verification
-app.post('/v1/binance/verify', auth, async (req, res) => {
+app.post('/v1/binance/verify', auth, async (_req, res) => {
   try {
-    const result = await verifyPayments();
-    res.json({ checked: result.length, payments: result });
+    const mailboxes = await fetchMailboxes(WORKER_CALLBACK_URL, BRIDGE_TOKEN);
+    const report = await processMailboxes(mailboxes);
+    res.json({ mailboxes: mailboxes.length, checked: report.checked, payments: report.details });
   } catch (err) {
     console.error('[verify] error:', err);
     res.status(500).json({ error: String(err) });
   }
 });
+
+// Process every mailbox: verify payments, send callback with the correct
+// store_id, and only mark seen after a successful callback.
+async function processMailboxes(mailboxes: MailBox[]) {
+  let checked = 0;
+  const details: any[] = [];
+  for (const mailbox of mailboxes) {
+    try {
+      const payments = await verifyPayments(mailbox);
+      checked += payments.length;
+      const seenUids: number[] = [];
+      for (const p of payments) {
+        const parsed = parseBinanceEmail(p.body);
+        if (!parsed) {
+          // Unparseable — mark as seen so we don't reprocess it
+          seenUids.push(p.uid);
+          continue;
+        }
+        const res = await sendCallback(WORKER_CALLBACK_URL, BRIDGE_TOKEN, {
+          store_id: String(p.storeId),
+          client_id: p.clientId,
+          binance_user: parsed.binanceUser,
+          usdt_amount: parsed.amount,
+          status: 'verified',
+          raw_email: p.body
+        });
+        if (res.ok) seenUids.push(p.uid);
+        details.push({ store_id: p.storeId, binance_user: parsed.binanceUser, usdt_amount: parsed.amount, ok: res.ok, error: res.error });
+      }
+      // Mark emails as read only after all callbacks finished
+      if (seenUids.length > 0) {
+        await markEmailsSeen(mailbox, seenUids).catch((err) =>
+          console.error(`[poll] Error marking emails as read for ${mailbox.gmail_user}:`, err)
+        );
+      }
+    } catch (err) {
+      console.error(`[poll] error for mailbox ${mailbox.gmail_user}:`, err);
+    }
+  }
+  return { checked, details };
+}
 
 // Start polling
 let isPolling = false;
@@ -47,30 +90,12 @@ async function pollLoop() {
   if (isPolling) return;
   isPolling = true;
   try {
-    const payments = await verifyPayments();
-    const seenUids: number[] = [];
-    for (const p of payments) {
-      const parsed = parseBinanceEmail(p.body);
-      if (!parsed) {
-        // Unparseable — mark as seen so we don't reprocess it
-        seenUids.push(p.uid);
-        continue;
-      }
-      const res = await sendCallback(WORKER_CALLBACK_URL, BRIDGE_TOKEN, {
-        store_id: p.storeId,
-        client_id: p.clientId,
-        binance_user: parsed.binanceUser,
-        usdt_amount: parsed.amount,
-        status: 'verified',
-        raw_email: p.body
-      });
-      if (res.ok) seenUids.push(p.uid);
-    }
-    // Mark emails as read only after all callbacks finished
-    if (seenUids.length > 0) {
-      await markEmailsSeen(seenUids).catch((err) =>
-        console.error('[poll] Error marking emails as read:', err)
-      );
+    const mailboxes = await fetchMailboxes(WORKER_CALLBACK_URL, BRIDGE_TOKEN);
+    if (mailboxes.length === 0) {
+      console.log('[poll] No vendor mailboxes configured yet');
+    } else {
+      console.log(`[poll] Polling ${mailboxes.length} mailboxes`);
+      await processMailboxes(mailboxes);
     }
   } catch (err) {
     console.error('[poll] error:', err);

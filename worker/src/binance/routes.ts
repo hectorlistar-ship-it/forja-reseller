@@ -6,6 +6,19 @@ import { extractToken } from '../auth';
 
 export const binanceRoutes = new Hono<{ Bindings: Env; Variables: { user: any } }>();
 
+// List mailboxes the bridge should poll (protected by BRIDGE_TOKEN).
+// Returns every active store that configured a Gmail, so the local bridge
+// (one polling loop) can route payments to the correct store.
+binanceRoutes.get('/mailboxes', async (c) => {
+  const bridgeToken = extractToken(c.req.header('Authorization'));
+  if (!bridgeToken || bridgeToken !== c.env.BRIDGE_TOKEN) {
+    return c.json({ error: 'Token de bridge inválido' }, 401);
+  }
+  const db = createDb(c.env);
+  const mailboxes = await queries.listStoresWithGmail(c.env, db);
+  return c.json({ mailboxes });
+});
+
 // Callback from bridge (protected by BRIDGE_TOKEN)
 binanceRoutes.post('/callback', async (c) => {
   const bridgeToken = extractToken(c.req.header('Authorization'));

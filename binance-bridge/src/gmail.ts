@@ -1,11 +1,9 @@
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
-
-const GMAIL_USER = process.env.GMAIL_USER!;
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD!;
+import type { MailBox } from './worker-client.js';
 
 export interface UnreadEmail {
-  storeId: string;
+  storeId: number;
   clientId: string;
   uid: number;
   body: string;
@@ -29,18 +27,22 @@ const BINANCE_DOMAIN = /@[^@]*binance\.com$/i;
 // date keeps the candidate set small (big unread backlogs make Gmail crawl).
 const SINCE_DAYS = 14;
 
-export async function verifyPayments(): Promise<UnreadEmail[]> {
+async function openInbox(mailbox: MailBox): Promise<ImapFlow> {
   const client = new ImapFlow({
     host: 'imap.gmail.com',
     port: 993,
     secure: true,
-    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+    auth: { user: mailbox.gmail_user, pass: mailbox.gmail_app_password },
     logger: false,
     // Fail fast instead of hanging forever on slow Gmail responses
     socketTimeout: 90000,
   });
-
   await client.connect();
+  return client;
+}
+
+export async function verifyPayments(mailbox: MailBox): Promise<UnreadEmail[]> {
+  const client = await openInbox(mailbox);
 
   try {
     const lock = await client.getMailboxLock('INBOX');
@@ -60,10 +62,10 @@ export async function verifyPayments(): Promise<UnreadEmail[]> {
       const uidSet = new Set<number>((await Promise.all(searches)).flat());
       const uids = [...uidSet];
       if (uids.length === 0) {
-        console.log('[gmail] Found 0 unread Binance emails');
+        console.log(`[gmail] ${mailbox.gmail_user}: 0 unread Binance emails`);
         return [];
       }
-      console.log(`[gmail] ${uids.length} unread candidates, fetching envelopes...`);
+      console.log(`[gmail] ${mailbox.gmail_user}: ${uids.length} unread candidates, fetching envelopes...`);
 
       // Batch envelope fetch (ONE round trip per chunk) instead of one
       // fetchOne per UID — mailboxes with hundreds of unread Binance
@@ -93,7 +95,7 @@ export async function verifyPayments(): Promise<UnreadEmail[]> {
 
           const parsed = await simpleParser(msg.source);
           const body = parsed.text || parsed.html || '';
-          emails.push({ storeId: process.env.STORE_ID || 'default', clientId: 'default', uid, body });
+          emails.push({ storeId: mailbox.store_id, clientId: 'default', uid, body });
           // Do NOT mark \Seen here — let the caller mark it only after the
           // worker callback succeeds, so the email is retried on failure.
         } catch (err) {
@@ -101,7 +103,7 @@ export async function verifyPayments(): Promise<UnreadEmail[]> {
         }
       }
 
-      console.log(`[gmail] Found ${emails.length} unread Binance emails`);
+      console.log(`[gmail] ${mailbox.gmail_user}: Found ${emails.length} unread Binance emails`);
       return emails;
     } finally {
       lock.release();
@@ -115,17 +117,9 @@ export async function verifyPayments(): Promise<UnreadEmail[]> {
  * Mark UIDs as read (\Seen) inside a single IMAP session.
  * Call this only after a successful worker callback to avoid losing emails.
  */
-export async function markEmailsSeen(uids: number[]): Promise<void> {
+export async function markEmailsSeen(mailbox: MailBox, uids: number[]): Promise<void> {
   if (uids.length === 0) return;
-  const client = new ImapFlow({
-    host: 'imap.gmail.com',
-    port: 993,
-    secure: true,
-    auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
-    logger: false,
-    socketTimeout: 30000,
-  });
-  await client.connect();
+  const client = await openInbox(mailbox);
   try {
     const lock = await client.getMailboxLock('INBOX');
     try {

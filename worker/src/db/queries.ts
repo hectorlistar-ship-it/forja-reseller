@@ -357,6 +357,23 @@ export async function getStoreGmailCredentials(env: Env, db: Db, storeId: number
   return { user: row.gmail_user, appPassword };
 }
 
+// All stores that configured Gmail validation (active stores only).
+// Used by the bridge to poll every vendor mailbox and route payments to
+// the correct store.
+export async function listStoresWithGmail(env: Env, db: Db): Promise<Array<{ store_id: number; gmail_user: string; gmail_app_password: string }>> {
+  const rows = await db.all<{ id: number; gmail_user: string; gmail_app_password: string }>(
+    `SELECT id, gmail_user, gmail_app_password FROM stores
+     WHERE status = 'active' AND gmail_user IS NOT NULL AND gmail_app_password IS NOT NULL`
+  );
+  const out: Array<{ store_id: number; gmail_user: string; gmail_app_password: string }> = [];
+  for (const row of rows) {
+    if (!row.gmail_user || !row.gmail_app_password) continue;
+    const appPassword = await decryptSecret(env, row.gmail_app_password);
+    out.push({ store_id: row.id, gmail_user: row.gmail_user, gmail_app_password: appPassword });
+  }
+  return out;
+}
+
 // ============================================
 // CLIENTS
 // ============================================

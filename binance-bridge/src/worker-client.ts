@@ -1,3 +1,35 @@
+import 'dotenv/config';
+
+export interface MailBox {
+  store_id: number;
+  gmail_user: string;
+  gmail_app_password: string;
+}
+
+// Reads the list of vendor mailboxes the bridge should poll. Credentials are
+// decrypted server-side by the worker (only on this authenticated request).
+export async function fetchMailboxes(
+  workerUrl: string,
+  bridgeToken: string
+): Promise<MailBox[]> {
+  const base = workerUrl.replace(/\/$/, '').replace(/\/api\/binance\/callback$/, '');
+  try {
+    const res = await fetch(`${base}/api/binance/mailboxes`, {
+      headers: { 'Authorization': `Bearer ${bridgeToken}` }
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[worker-client] Fetch mailboxes failed:', res.status, err);
+      return [];
+    }
+    const data = await res.json() as { mailboxes: MailBox[] };
+    return data.mailboxes || [];
+  } catch (err) {
+    console.error('[worker-client] Fetch mailboxes network error:', err);
+    return [];
+  }
+}
+
 export interface CallbackPayload {
   store_id: string;
   client_id: string;
