@@ -392,6 +392,17 @@ app.post('/api/super/platforms', ...superAdminAuth, async (c) => {
 
 const resellerAuth = [createAuthMiddleware(), requireReseller()];
 
+// Resolves the reseller the superadmin operates as when no ?reseller_id=
+// is given. Defaults to the owner's reseller account ("dueno"), so the
+// owner manages his own store(s) just like a reseller manages his.
+async function getOwnerResellerId(db: ReturnType<typeof createDb>): Promise<number> {
+  const owner = await db.first<{ id: number }>(`SELECT id FROM resellers WHERE username = 'dueno'`);
+  if (owner) return owner.id;
+  // Fallback: any active reseller (defensive; "dueno" is seeded by migration 0004)
+  const anyReseller = await db.first<{ id: number }>(`SELECT id FROM resellers WHERE status = 'active' ORDER BY id ASC LIMIT 1`);
+  return anyReseller?.id ?? 0;
+}
+
 // Helper: does this store belong to the authenticated reseller?
 // (superadmin bypasses the check)
 async function assertStoreOwnership(db: ReturnType<typeof createDb>, storeId: number, user: any): Promise<boolean> {
@@ -422,7 +433,7 @@ app.get('/api/admin/stores', ...resellerAuth, async (c) => {
   const db = createDb(c.env);
   const user = c.get('user');
   const resellerId = user.type === 'superadmin' ?
-    (c.req.query('reseller_id') ? Number(c.req.query('reseller_id')) : 0) :
+    (c.req.query('reseller_id') ? Number(c.req.query('reseller_id')) : await getOwnerResellerId(db)) :
     user.userId;
 
   if (!resellerId) return c.json({ stores: [] });
@@ -434,7 +445,7 @@ app.get('/api/admin/stores', ...resellerAuth, async (c) => {
 app.post('/api/admin/stores', ...resellerAuth, async (c) => {
   const db = createDb(c.env);
   const user = c.get('user');
-  const resellerId = user.type === 'superadmin' ? Number(c.req.query('reseller_id')) : user.userId;
+  const resellerId = user.type === 'superadmin' ? (c.req.query('reseller_id') ? Number(c.req.query('reseller_id')) : await getOwnerResellerId(db)) : user.userId;
 
   const body = await c.req.json();
   const { slug, name, wallet_binance } = body;

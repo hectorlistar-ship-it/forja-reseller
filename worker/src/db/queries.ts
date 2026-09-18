@@ -87,6 +87,24 @@ export async function getStoreById(db: Db, id: number) {
   return db.first(`SELECT * FROM stores WHERE id = ?`, [id]);
 }
 
+// The store the bot/catalog should default to. Prefers a globally configured
+// owner store, otherwise returns the first active store.
+export async function getDefaultStoreId(db: Db): Promise<number | null> {
+  const ownerSetting = await getGlobalSetting(db, 'owner_store_slug');
+  if (ownerSetting?.value) {
+    const store = await getStoreBySlug(db, ownerSetting.value);
+    if (store && store.status === 'active') return store.id;
+  }
+  const anyStore = await db.first<{ id: number }>(`SELECT * FROM stores WHERE status = 'active' ORDER BY id ASC LIMIT 1`);
+  return anyStore?.id ?? null;
+}
+
+export async function getDefaultStore(db: Db): Promise<any | null> {
+  const id = await getDefaultStoreId(db);
+  if (!id) return null;
+  return getStoreById(db, id);
+}
+
 export async function getStoresByReseller(db: Db, resellerId: number) {
   return db.all(`SELECT * FROM stores WHERE reseller_id = ? ORDER BY created_at DESC`, [resellerId]);
 }

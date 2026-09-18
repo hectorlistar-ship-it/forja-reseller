@@ -111,7 +111,7 @@ function CMD_URL(env: any, slug: string, _platform: string) {
 
 async function sendCatalog(env: any, chatId: number) {
   const db = createDb(env);
-  const store = await db.first(`SELECT * FROM stores WHERE status = 'active' LIMIT 1`);
+  const store = await queries.getDefaultStore(db);
 
   if (!store) {
     await sendTelegramMessage(env, chatId, 'No hay tiendas disponibles.');
@@ -203,7 +203,7 @@ async function getStorePlatforms(env: any, storeId: number) {
 
 async function handlePurchase(c: any, chatId: number, userId: number, username: string | undefined, platformKey: string) {
   const db = createDb(c.env);
-  const store = await db.first(`SELECT * FROM stores WHERE status = 'active' LIMIT 1`);
+  const store = await queries.getDefaultStore(db);
   if (!store) {
     await sendTelegramMessage(c.env, chatId, 'No hay tiendas disponibles.');
     return;
