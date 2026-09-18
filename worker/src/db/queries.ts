@@ -191,15 +191,16 @@ export async function upsertPlatform(db: Db, data: {
 }
 
 // Store platform overrides
-export async function setStorePlatformPrice(db: Db, storeId: number, platformKey: string, costPrice?: number, salePrice?: number, isActive = 1) {
+export async function setStorePlatformPrice(db: Db, storeId: number, platformKey: string, costPrice?: number, salePrice?: number, isActive = 1, promoImageUrl?: string | null) {
   return db.run(
-    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active)
-     VALUES (?, ?, ?, ?, ?)
+    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active, promo_image_url)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(store_id, platform_key) DO UPDATE SET
        cost_price_usd = excluded.cost_price_usd,
        sale_price_usd = excluded.sale_price_usd,
-       is_active = excluded.is_active`,
-    [storeId, platformKey, costPrice ?? null, salePrice ?? null, isActive]
+       is_active = excluded.is_active,
+       promo_image_url = COALESCE(excluded.promo_image_url, store_platforms.promo_image_url)`,
+    [storeId, platformKey, costPrice ?? null, salePrice ?? null, isActive, promoImageUrl ?? null]
   );
 }
 

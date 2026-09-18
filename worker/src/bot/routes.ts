@@ -2,10 +2,12 @@ import { Hono } from 'hono';
 import type { Env } from '../config';
 import { createDb } from '../db/client';
 import * as queries from '../db/queries';
+import { decryptSecret } from '../crypto';
 
 export const botRoutes = new Hono<{ Bindings: Env; Variables: { user: any } }>();
 
 const WORKER_URL = 'https://forja-reseller.hectorlistar.workers.dev';
+const STORE_FRONTEND_URL = 'https://reseller-store.pages.dev';
 
 const EMOJI: Record<string, string> = {
   netflix: '🍿',
@@ -16,10 +18,32 @@ const EMOJI: Record<string, string> = {
   youtube: '▶️',
 };
 
-// Telegram webhook
-botRoutes.post('/telegram', async (c) => {
+// Resolves which bot token + store handles an update. A vendor that configured
+// his own bot token uses his store; otherwise the owner's store/bot is used.
+async function resolveBot(c: any) {
   const db = createDb(c.env);
+  const requestedStoreId = Number(c.req.param('storeId'));
+  let store = Number.isInteger(requestedStoreId) && requestedStoreId > 0
+    ? await queries.getStoreById(db, requestedStoreId)
+    : await queries.getDefaultStore(db);
+
+  if (!store) store = await queries.getDefaultStore(db);
+  if (!store) return { botToken: null as string | null, store: null as any, db };
+
+  let botToken: string | null = null;
+  if (store.bot_token) {
+    botToken = await decryptSecret(c.env, store.bot_token);
+  } else {
+    botToken = c.env.TELEGRAM_BOT_TOKEN || null;
+  }
+  return { botToken, store, db };
+}
+
+// Telegram webhook (per-store, e.g. /api/bot/webhook/1)
+botRoutes.post('/webhook/:storeId', async (c) => {
+  const { botToken, store } = await resolveBot(c);
   const update = await c.req.json();
+  if (!botToken || !store) return c.json({ ok: true });
 
   // inline keyboard handling
   if (update.callback_query) {
@@ -27,8 +51,11 @@ botRoutes.post('/telegram', async (c) => {
     const cbChatId = update.callback_query.message.chat.id;
     const cid = update.callback_query.id;
     if (data === 'catalogo') {
-      await sendCatalog(c.env, cbChatId);
-      await answerCallback(c.env, cid, 'Abriendo catálogo… 🛒');
+      await sendCatalog(c.env, botToken, store, cbChatId);
+      await answerCallback(botToken, cid, 'Abriendo catálogo… 🛒');
+    } else if (isPromoCallback(data)) {
+      await handlePromoCallback(c, botToken, store, cbChatId, data);
+      await answerCallback(botToken, cid, 'Publicando promo… 🔥');
     }
     return c.json({ ok: true });
   }
@@ -50,7 +77,7 @@ botRoutes.post('/telegram', async (c) => {
     const keyboard = {
       inline_keyboard: [
         [{ text: '🛒 Ver catálogo disponible', callback_data: 'catalogo' }],
-        [{ text: '🛍️ Comprar', url: CMD_URL(c.env, 'default', '') }],
+        [{ text: '🛍️ Comprar', url: CMD_URL(c.env, store.slug, '') }],
       ],
     };
     const msg =
@@ -61,24 +88,24 @@ botRoutes.post('/telegram', async (c) => {
       `🛡️ Garantía por tu compra.\n\n` +
       `Pulsa el botón para ver lo que tenemos disponible 👇`;
 
-    await sendTelegramMessage(c.env, chatId, msg, { parse_mode: 'Markdown', reply_markup: JSON.stringify(keyboard) });
+    await sendTelegramMessage(botToken, chatId, msg, { parse_mode: 'Markdown', reply_markup: JSON.stringify(keyboard) });
     return c.json({ ok: true });
   }
 
   if (text === '/catalogo' || text === '/catalogo@') {
-    await sendCatalog(c.env, chatId);
+    await sendCatalog(c.env, botToken, store, chatId);
     return c.json({ ok: true });
   }
 
   if (text.startsWith('/comprar ')) {
     const platformKey = text.replace('/comprar ', '').trim().toLowerCase();
-    await handlePurchase(c, chatId, userId, username, platformKey);
+    await handlePurchase(c, botToken, store, chatId, userId, username, platformKey);
     return c.json({ ok: true });
   }
 
   if (text === '/miscompras') {
-    // TODO: implement
-    await sendTelegramMessage(c.env, chatId, 'Función en desarrollo.');
+    // TODO: implement per-store
+    await sendTelegramMessage(botToken, chatId, 'Función en desarrollo.');
     return c.json({ ok: true });
   }
 
@@ -88,10 +115,11 @@ botRoutes.post('/telegram', async (c) => {
         [{ text: '🛒 Ver catálogo', callback_data: 'catalogo' }],
       ],
     };
-    await sendTelegramMessage(c.env, chatId,
+    await sendTelegramMessage(botToken, chatId,
       `Comandos disponibles:\n` +
       `🏷️ /catalogo - Ver catálogo\n` +
       `🛍️ /comprar <plataforma> - Comprar cuenta\n` +
+      `🔥 /promo <plataforma> - Publicar promo del servicio en el grupo\n` +
       `📦 /miscompras - Ver tus compras\n` +
       `❓ /ayuda - Esta ayuda`,
       { reply_markup: JSON.stringify(keyboard) }
@@ -99,32 +127,43 @@ botRoutes.post('/telegram', async (c) => {
     return c.json({ ok: true });
   }
 
+  if (text.startsWith('/promo')) {
+    const target = text.replace('/promo', '').trim().toLowerCase();
+    // Solo funciona en grupos donde el bot esté agregado
+    const chatType = message.chat.type;
+    if (chatType !== 'group' && chatType !== 'supergroup') {
+      await sendTelegramMessage(botToken, chatId, 'ℹ️ Este comando solo funciona dentro de un grupo donde agregues el bot y seas administrador.');
+      return c.json({ ok: true });
+    }
+    // El vendedor (admin del grupo) es quien puede publicar
+    const member = await getChatMember(botToken, chatId, userId);
+    if (member !== 'administrator' && member !== 'creator') {
+      await sendTelegramMessage(botToken, chatId, '⛔ Solo los administradores del grupo pueden publicar promos (usa /promo para que el bot la muestre).');
+      return c.json({ ok: true });
+    }
+    await handlePromo(c, botToken, store, chatId, target);
+    return c.json({ ok: true });
+  }
+
   // Default response
-  await sendTelegramMessage(c.env, chatId, 'No entiendo ese comando. Escribe /ayuda para ver comandos.');
+  await sendTelegramMessage(botToken, chatId, 'No entiendo ese comando. Escribe /ayuda para ver comandos.');
   return c.json({ ok: true });
 });
 
 function CMD_URL(env: any, slug: string, _platform: string) {
-  const storeUrl = env.STORE_URL || 'https://reseller-store.pages.dev';
+  const storeUrl = env.STORE_URL || STORE_FRONTEND_URL;
   return `${storeUrl}/tienda/${slug}`;
 }
 
-async function sendCatalog(env: any, chatId: number) {
+async function sendCatalog(env: any, botToken: string, store: any, chatId: number) {
   const db = createDb(env);
-  const store = await queries.getDefaultStore(db);
-
-  if (!store) {
-    await sendTelegramMessage(env, chatId, 'No hay tiendas disponibles.');
-    return;
-  }
-
-  const platforms = await getStorePlatforms(env, store.id);
+  const platforms = await getStorePlatforms(db, store.id);
   if (platforms.length === 0) {
-    await sendTelegramMessage(env, chatId, 'No hay stock disponible.');
+    await sendTelegramMessage(botToken, chatId, 'No hay stock disponible.');
     return;
   }
 
-  const storeUrl = env.STORE_URL || 'https://reseller-store.pages.dev';
+  const storeUrl = env.STORE_URL || STORE_FRONTEND_URL;
   const storeLink = `${storeUrl}/tienda/${store.slug}`;
   const bannerUrl = `${WORKER_URL}/banner-catalogo.png`;
 
@@ -147,17 +186,18 @@ async function sendCatalog(env: any, chatId: number) {
   buttons.push([{ text: '🛒 COMPRAR AHORA', url: storeLink }]);
 
   // si la foto falla, envía el texto plano
-  const res = await sendTelegramPhoto(env, chatId, bannerUrl, caption, {
+  const res = await sendTelegramPhoto(botToken, chatId, bannerUrl, caption, {
     parse_mode: 'Markdown',
     reply_markup: JSON.stringify({ inline_keyboard: buttons }),
   });
   if (!res) {
-    await sendTelegramMessage(env, chatId, caption, { parse_mode: 'Markdown' });
+    await sendTelegramMessage(botToken, chatId, caption, { parse_mode: 'Markdown' });
   }
 }
 
-async function sendTelegramMessage(env: any, chatId: number, text: string, options: any = {}) {
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+async function sendTelegramMessage(botToken: string, chatId: number, text: string, options: any = {}) {
+  if (!botToken || !chatId) return false;
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -166,8 +206,8 @@ async function sendTelegramMessage(env: any, chatId: number, text: string, optio
   return res.ok;
 }
 
-async function answerCallback(env: any, callbackQueryId: string, text: string) {
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/answerCallbackQuery`;
+async function answerCallback(botToken: string, callbackQueryId: string, text: string) {
+  const url = `https://api.telegram.org/bot${botToken}/answerCallbackQuery`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -176,8 +216,25 @@ async function answerCallback(env: any, callbackQueryId: string, text: string) {
   return res.ok;
 }
 
-async function sendTelegramPhoto(env: any, chatId: number, photoUrl: string, caption: string, options: any = {}) {
-  const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`;
+async function getChatMember(botToken: string, chatId: number, userId: number): Promise<string | null> {
+  if (!botToken || !chatId || !userId) return null;
+  const url = `https://api.telegram.org/bot${botToken}/getChatMember`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, user_id: userId }),
+    });
+    const data = await res.json() as any;
+    return data?.ok === true ? data.result.status : null;
+  } catch {
+    return null;
+  }
+}
+
+async function sendTelegramPhoto(botToken: string, chatId: number, photoUrl: string, caption: string, options: any = {}) {
+  if (!botToken || !chatId) return false;
+  const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -191,8 +248,7 @@ async function sendTelegramPhoto(env: any, chatId: number, photoUrl: string, cap
   }
 }
 
-async function getStorePlatforms(env: any, storeId: number) {
-  const db = createDb(env);
+async function getStorePlatforms(db: any, storeId: number) {
   const platforms = await queries.getStorePlatforms(db, storeId);
   const inventory = await queries.getInventorySummary(db, storeId);
   return platforms.map((p: any) => {
@@ -201,14 +257,92 @@ async function getStorePlatforms(env: any, storeId: number) {
   });
 }
 
-async function handlePurchase(c: any, chatId: number, userId: number, username: string | undefined, platformKey: string) {
+// Publica la tarjeta de promo de un servicio en el grupo: imagen (botón verde
+// horneado) + descripción con precio real + botón real de compra directa.
+async function handlePromo(c: any, botToken: string, store: any, chatId: number, platformKey: string) {
   const db = createDb(c.env);
-  const store = await queries.getDefaultStore(db);
-  if (!store) {
-    await sendTelegramMessage(c.env, chatId, 'No hay tiendas disponibles.');
+  const platforms: any[] = await getStorePlatforms(db, store.id);
+  const storeUrl = c.env.STORE_URL || STORE_FRONTEND_URL;
+  const storeLink = `${storeUrl}/tienda/${store.slug}`;
+
+  if (platformKey) {
+    const p: any = platforms.find((x: any) => x.platform_key === platformKey || x.name?.toLowerCase() === platformKey);
+    if (!p) {
+      await sendTelegramMessage(botToken, chatId,
+        `❌ No encontré *${platformKey}* en tu catálogo.\n\nUsa /promo con uno de estos:\n${platforms.map((x: any) => `• ${x.name}`).join('\n')}`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+    await sendPromoCard(c, botToken, store, chatId, p, storeLink);
     return;
   }
-  const storeUrl = c.env.STORE_URL || 'https://reseller-store.pages.dev';
+
+  // Sin argumento: listar plataformas disponibles
+  const buttons = platforms.filter((p: any) => p.stock > 0).map((p: any) => ({
+    callback_data: `promo:${p.platform_key}`,
+    text: `${EMOJI[p.platform_key] || '📦'} ${p.name} — $${p.sale_price_usd} USDT`,
+  }));
+  if (buttons.length === 0) {
+    await sendTelegramMessage(botToken, chatId, 'No tienes servicios con stock para promocionar.');
+    return;
+  }
+  await sendTelegramMessage(botToken, chatId, 'Elige qué servicio publicar en el grupo: 👇', {
+    reply_markup: JSON.stringify({ inline_keyboard: buttons }),
+  });
+}
+
+// Callback_data para promos elegidas desde el teclado inline
+function isPromoCallback(data: string): boolean {
+  return data.startsWith('promo:');
+}
+
+async function handlePromoCallback(c: any, botToken: string, store: any, chatId: number, data: string) {
+  const platformKey = data.replace('promo:', '').trim().toLowerCase();
+  const db = createDb(c.env);
+  const platforms: any[] = await getStorePlatforms(db, store.id);
+  const storeUrl = c.env.STORE_URL || STORE_FRONTEND_URL;
+  const storeLink = `${storeUrl}/tienda/${store.slug}`;
+  const p: any = platforms.find((x: any) => x.platform_key === platformKey);
+  if (!p) return;
+  await sendPromoCard(c, botToken, store, chatId, p, storeLink);
+}
+
+async function sendPromoCard(c: any, botToken: string, store: any, chatId: number, platform: any, storeLink: string) {
+  const key = platform.platform_key;
+  const emo = EMOJI[key] || '📦';
+  const imageKey = platform.promo_image_url
+    ? platform.promo_image_url
+    : `${WORKER_URL}/promo-${key}.png`;
+
+  const caption =
+    `${emo} *${platform.name}* al mejor precio\n\n` +
+    `💰 Precio: *$${platform.sale_price_usd} USDT*\n` +
+    `📦 Disponibles: *${platform.stock}*\n\n` +
+    `⚡ Entrega inmediata y garantizada.\n` +
+    `💳 Pagas con USDT y recibes tu cuenta al instante.\n\n` +
+    `Pulsa el botón para comprar 👇`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: `🛒 COMPRAR ${platform.name.toUpperCase()} — $${platform.sale_price_usd} USDT`, url: storeLink }],
+    ],
+  };
+
+  const ok = await sendTelegramPhoto(botToken, chatId, imageKey, caption, {
+    parse_mode: 'Markdown',
+    reply_markup: JSON.stringify(keyboard),
+  });
+  if (!ok && platform.promo_image_url) {
+    // El vendedor puso una URL externa rota → ofrecer reenviar con imagen propia
+    await sendTelegramMessage(botToken, chatId, `No pude cargar tu imagen personalizada para ${platform.name}. Verifica la URL en tu panel.`);
+  }
+  console.log(`[bot] promo sent for ${key} in chat ${chatId}`);
+}
+
+async function handlePurchase(c: any, botToken: string, store: any, chatId: number, userId: number, username: string | undefined, platformKey: string) {
+  const db = createDb(c.env);
+  const storeUrl = c.env.STORE_URL || STORE_FRONTEND_URL;
   const storeLink = `${storeUrl}/tienda/${store.slug}`;
 
   const platform = await db.first(`SELECT * FROM platforms WHERE lower(key) = lower(?)`, [platformKey]);
@@ -216,7 +350,7 @@ async function handlePurchase(c: any, chatId: number, userId: number, username: 
 
   if (!platform) {
     const keyboard = { inline_keyboard: [[{ text: '🛒 Ver catálogo', callback_data: 'catalogo' }]] };
-    await sendTelegramMessage(c.env, chatId,
+    await sendTelegramMessage(botToken, chatId,
       `❌ No encontré *${platformKey}*.\n\nEscribe el nombre tal como aparece en el catálogo, por ejemplo:\n/comprar netflix`,
       { parse_mode: 'Markdown', reply_markup: JSON.stringify(keyboard) }
     );
@@ -229,7 +363,7 @@ async function handlePurchase(c: any, chatId: number, userId: number, username: 
     ],
   };
 
-  await sendTelegramMessage(c.env, chatId,
+  await sendTelegramMessage(botToken, chatId,
     `${emo} *¡Buenísima elección!*\n\n` +
     `Cuenta *${platform.name}* disponible al instante.\n` +
     `💰 Precio: *$${platform.sale_price_usd} USDT*\n\n` +

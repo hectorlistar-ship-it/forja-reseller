@@ -560,6 +560,29 @@ app.post('/api/admin/inventory/add', ...resellerAuth, async (c) => {
   return c.json({ message: `${result.added} cuentas agregadas`, added: result.added });
 });
 
+// Update per-store platform settings (prices + promo image for /promo cards)
+app.put('/api/admin/inventory/:platformKey', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const platformKey = c.req.param('platformKey');
+  const body = await c.req.json().catch(() => ({}));
+
+  await queries.setStorePlatformPrice(
+    db,
+    storeId,
+    platformKey,
+    body.cost_price_usd !== undefined ? Number(body.cost_price_usd) : undefined,
+    body.sale_price_usd !== undefined ? Number(body.sale_price_usd) : undefined,
+    body.is_active !== undefined ? Number(body.is_active) : 1,
+    body.promo_image_url !== undefined ? (body.promo_image_url || null) : undefined
+  );
+
+  return c.json({ message: 'Plataforma actualizada' });
+});
+
 // Orders
 app.get('/api/admin/orders', ...resellerAuth, async (c) => {
   const db = createDb(c.env);
@@ -678,6 +701,20 @@ app.put('/api/admin/mi-negocio', ...resellerAuth, async (c) => {
     gmailAppPassword: body.gmail_app_password,
     botToken: body.bot_token,
   });
+
+  // If the vendor provided a bot token, register the per-store webhook so
+  // Telegram delivers this bot's updates to /webhooks/webhook/{storeId}.
+  if (body.bot_token) {
+    const webhookUrl = `${c.env.WORKER_URL || 'https://forja-reseller.hectorlistar.workers.dev'}/webhooks/webhook/${storeId}`;
+    await fetch(`https://api.telegram.org/bot${body.bot_token}/setWebhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: webhookUrl,
+        allowed_updates: ['message', 'callback_query'],
+      }),
+    }).catch((e: any) => console.error('[mi-negocio] setWebhook error:', e));
+  }
 
   return c.json({ message: 'Datos de negocio guardados' });
 });

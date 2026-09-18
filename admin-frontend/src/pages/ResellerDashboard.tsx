@@ -243,6 +243,9 @@ function StoreCard({ store, onChanged }: { store: Store; onChanged: () => void }
 function InventarioTab({ storeId }: { storeId: number }) {
   const [platforms, setPlatforms] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingPromo, setEditingPromo] = useState<string | null>(null);
+  const [promoUrl, setPromoUrl] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
 
   const load = useCallback(() => {
     api.get<{ platforms: any[] }>(`/api/admin/inventory?store_id=${storeId}`)
@@ -251,6 +254,20 @@ function InventarioTab({ storeId }: { storeId: number }) {
   }, [storeId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const savePromoImage = async (platformKey: string) => {
+    setPromoLoading(true);
+    try {
+      await api.put(`/api/admin/inventory/${platformKey}?store_id=${storeId}`, { promo_image_url: promoUrl || null });
+      toast.success('Imagen de promo actualizada');
+      setEditingPromo(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || 'Error al guardar imagen');
+    } finally {
+      setPromoLoading(false);
+    }
+  };
 
   return (
     <div>
@@ -267,15 +284,37 @@ function InventarioTab({ storeId }: { storeId: number }) {
       <div style={{ display: 'grid', gap: '8px', marginTop: '16px' }}>
         {platforms.length === 0 && <p style={{ color: 'var(--muted)' }}>Sin plataformas configuradas para esta tienda.</p>}
         {platforms.map((p: any) => (
-          <div key={p.platform_key} className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontWeight: 600 }}>{p.name}</div>
-              <div style={{ fontSize: '13px', color: 'var(--muted)' }}>${p.sale_price_usd} USDT · costo ${p.cost_price_usd}</div>
+          <div key={p.platform_key} className="card">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{p.name}</div>
+                <div style={{ fontSize: '13px', color: 'var(--muted)' }}>${p.sale_price_usd} USDT · costo ${p.cost_price_usd}</div>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '13px' }}>
+                <span className="badge badge-ok">{p.stock} disponibles</span>
+                <span style={{ color: 'var(--muted)' }}>{p.sold} vendidas</span>
+                <button
+                  onClick={() => { setEditingPromo(editingPromo === p.platform_key ? null : p.platform_key); setPromoUrl(p.promo_image_url || ''); }}
+                  className="btn btn-ghost"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                >
+                  {p.promo_image_url ? '🖼️ Editar promo' : '🖼️ Imagen promo'}
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
-              <span className="badge badge-ok">{p.stock} disponibles</span>
-              <span style={{ color: 'var(--muted)' }}>{p.sold} vendidas</span>
-            </div>
+            {editingPromo === p.platform_key && (
+              <div style={{ marginTop: '10px', borderTop: '1px solid var(--border)', paddingTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <input
+                  value={promoUrl}
+                  onChange={e => setPromoUrl(e.target.value)}
+                  placeholder="URL de imagen para /promo (dejar vacía para usar la predeterminada)"
+                  style={{ flex: 1, padding: '8px' }}
+                />
+                <button onClick={() => savePromoImage(p.platform_key)} disabled={promoLoading} className="btn btn-primary" style={{ padding: '8px 12px' }}>
+                  {promoLoading ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
