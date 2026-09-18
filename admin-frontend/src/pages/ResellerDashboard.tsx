@@ -10,7 +10,7 @@ interface Store {
   status: string;
 }
 
-type Tab = 'resumen' | 'tiendas' | 'inventario' | 'pedidos' | 'clientes' | 'pagos';
+type Tab = 'resumen' | 'tiendas' | 'inventario' | 'pedidos' | 'clientes' | 'pagos' | 'negocio';
 
 export function ResellerDashboard() {
   const [stores, setStores] = useState<Store[]>([]);
@@ -58,7 +58,7 @@ export function ResellerDashboard() {
       ) : (
         <>
           <div style={{ display: 'flex', gap: '4px', marginBottom: '20px', borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
-            {(['resumen', 'tiendas', 'inventario', 'pedidos', 'clientes', 'pagos'] as Tab[]).map(t => (
+            {(['resumen', 'tiendas', 'inventario', 'pedidos', 'clientes', 'pagos', 'negocio'] as Tab[]).map(t => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -81,6 +81,7 @@ export function ResellerDashboard() {
           {tab === 'pedidos' && storeId && <PedidosTab storeId={storeId} />}
           {tab === 'clientes' && storeId && <ClientesTab storeId={storeId} />}
           {tab === 'pagos' && storeId && <PagosTab storeId={storeId} />}
+          {tab === 'negocio' && storeId && <NegocioTab storeId={storeId} />}
         </>
       )}
     </div>
@@ -466,6 +467,115 @@ function PagosTab({ storeId }: { storeId: number }) {
           <span style={{ color: 'var(--muted)' }}>{new Date(p.created_at * 1000).toLocaleString('es-MX')}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function NegocioTab({ storeId }: { storeId: number }) {
+  const [settings, setSettings] = useState<any>(null);
+  const [form, setForm] = useState({
+    name: '',
+    business_name: '',
+    wallet_binance: '',
+    trc20_address: '',
+    gmail_user: '',
+    gmail_app_password: '',
+    bot_token: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [savedSecret, setSavedSecret] = useState<{ gmail?: boolean; token?: boolean }>({});
+
+  const load = useCallback(() => {
+    api.get<{ settings: any }>(`/api/admin/mi-negocio?store_id=${storeId}`)
+      .then(d => {
+        const s = d.settings;
+        setSettings(s);
+        setForm({
+          name: s.name || '',
+          business_name: s.business_name || '',
+          wallet_binance: s.wallet_binance || '',
+          trc20_address: s.trc20_address || '',
+          gmail_user: s.gmail_user || '',
+          gmail_app_password: '',
+          bot_token: '',
+        });
+        setSavedSecret({ gmail: !!s.gmail_password_set, token: !!s.bot_token_set });
+      })
+      .catch(err => toast.error(err.message || 'Error al cargar configuración'));
+  }, [storeId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.put(`/api/admin/mi-negocio?store_id=${storeId}`, form);
+      toast.success('Negocio actualizado');
+      load();
+    } catch (err: any) {
+      toast.error(err.message || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!settings) return <div style={{ color: 'var(--muted)' }}>Cargando...</div>;
+
+  return (
+    <div style={{ maxWidth: '640px' }}>
+      <form onSubmit={save} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <h2 style={{ margin: 0, fontSize: '18px' }}>Mi negocio</h2>
+        <p style={{ margin: 0, fontSize: '13px', color: 'var(--muted)' }}>
+          Estos datos los configuras tú: el dueño de la plataforma nunca ve tus credenciales.
+        </p>
+
+        <Field label="Nombre de la tienda">
+          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Mi Tienda" style={{ width: '100%', padding: '10px' }} />
+        </Field>
+
+        <Field label="Marca / Nombre de negocio (se muestra al cliente)">
+          <input value={form.business_name} onChange={e => setForm({ ...form, business_name: e.target.value })} placeholder="Ej: CinePlus Store" style={{ width: '100%', padding: '10px' }} />
+        </Field>
+
+        <Field label="UID Binance (donde recibes tus pagos)">
+          <input value={form.wallet_binance} onChange={e => setForm({ ...form, wallet_binance: e.target.value })} placeholder="Ej: 68500125" style={{ width: '100%', padding: '10px' }} />
+        </Field>
+
+        <Field label="Dirección TRC20 (opcional, método de pago alternativo)">
+          <input value={form.trc20_address} onChange={e => setForm({ ...form, trc20_address: e.target.value })} placeholder="Tkr0m..." style={{ width: '100%', padding: '10px' }} />
+        </Field>
+
+        <Field label="Gmail para validar pagos (sin contraseña real, usa App Password)">
+          <input value={form.gmail_user} onChange={e => setForm({ ...form, gmail_user: e.target.value })} placeholder="tucorreo@gmail.com" style={{ width: '100%', padding: '10px' }} />
+          {savedSecret.gmail && <span className="badge badge-ok">📧 Configurado</span>}
+        </Field>
+
+        <Field label="App Password de Gmail (16 caracteres, se guarda cifrada)">
+          <input type="password" value={form.gmail_app_password} onChange={e => setForm({ ...form, gmail_app_password: e.target.value })} placeholder={savedSecret.gmail ? '•••••••• (déjalo vacío para conservar)' : 'abcd efgh ijkl mnop'} style={{ width: '100%', padding: '10px' }} />
+          {savedSecret.gmail && <span style={{ fontSize: '12px', color: 'var(--muted)' }}>Ya tienes una guardada. Vacío = no cambia.</span>}
+        </Field>
+
+        <Field label="Token de tu bot de Telegram (de @BotFather)">
+          <input type="password" value={form.bot_token} onChange={e => setForm({ ...form, bot_token: e.target.value })} placeholder={savedSecret.token ? '•••••••• (déjalo vacío para conservar)' : '123456:ABC-DEF...'} style={{ width: '100%', padding: '10px' }} />
+          {savedSecret.token && <span className="badge badge-ok">🤖 Bot configurado</span>}
+        </Field>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button className="btn btn-primary" disabled={saving} style={{ padding: '12px 20px' }}>
+            {saving ? 'Guardando...' : 'Guardar mi negocio'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>{label}</label>
+      {children}
     </div>
   );
 }

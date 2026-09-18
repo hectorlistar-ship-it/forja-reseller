@@ -91,8 +91,9 @@ storeRoutes.post('/buy', ...clientAuth, async (c) => {
 
   const paymentId = paymentResult.meta.last_row_id;
 
-  const walletResult = await db.first<{ value: string }>(
-    `SELECT value FROM global_settings WHERE key = 'binance_wallet'`
+  const store = await db.first<{ wallet_binance: string; trc20_address: string; name: string }>(
+    `SELECT wallet_binance, trc20_address, name FROM stores WHERE id = ?`,
+    [storeId]
   );
 
   return c.json({
@@ -100,7 +101,9 @@ storeRoutes.post('/buy', ...clientAuth, async (c) => {
     platform: platform.platform_key,
     platform_name: platform.name,
     price_usd: platform.sale_price_usd,
-    binance_wallet: walletResult?.value || 'CONFIGURAR_WALLET',
+    binance_wallet: store?.wallet_binance || 'CONFIGURAR_WALLET',
+    trc20_address: store?.trc20_address || null,
+    store_name: store?.name || null,
     binance_user,
     message: `Envía ${platform.sale_price_usd} USDT a la wallet y usa el botón "Verificar pago" cuando termines.`,
   });

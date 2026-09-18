@@ -72,7 +72,13 @@ app.get('/api/public/catalog/:slug', async (c) => {
   }).filter(p => p.stock > 0);
 
   return c.json({
-    store: { slug: store.slug, name: store.name },
+    store: {
+      slug: store.slug,
+      name: store.name,
+      business_name: store.business_name,
+      wallet_binance: store.wallet_binance || null,
+      trc20_address: store.trc20_address || null,
+    },
     platforms: catalog,
   });
 });
@@ -639,6 +645,41 @@ app.get('/api/admin/stats', ...resellerAuth, async (c) => {
 
   const stats = await queries.getStoreStats(db, storeId);
   return c.json(stats);
+});
+
+// ----- Mi negocio (vendor self-service) -----
+
+// GET: business settings without secrets (never expose token/password)
+app.get('/api/admin/mi-negocio', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const settings = await queries.getBusinessSettings(db, storeId);
+  if (!settings) return c.json({ error: 'Tienda no encontrada' }, 404);
+  return c.json({ settings });
+});
+
+// PUT: update business settings (secrets encrypted at rest)
+app.put('/api/admin/mi-negocio', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const body = await c.req.json().catch(() => ({}));
+  await queries.updateBusinessSettings(db, c.env, storeId, {
+    name: body.name,
+    businessName: body.business_name,
+    walletBinance: body.wallet_binance,
+    trc20Address: body.trc20_address,
+    gmailUser: body.gmail_user,
+    gmailAppPassword: body.gmail_app_password,
+    botToken: body.bot_token,
+  });
+
+  return c.json({ message: 'Datos de negocio guardados' });
 });
 
 // ============================================

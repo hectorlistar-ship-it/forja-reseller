@@ -22,6 +22,8 @@ export function BuyFlow() {
   const [step, setStep] = useState<'select' | 'pay' | 'verify'>('select');
   const [platforms, setPlatforms] = useState<any[]>([]);
   const [walletAddress, setWalletAddress] = useState('');
+  const [walletTrc20, setWalletTrc20] = useState('');
+  const [storeName, setStoreName] = useState('');
 
   useEffect(() => {
     async function loadData() {
@@ -30,6 +32,9 @@ export function BuyFlow() {
         const catalog = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/public/catalog/${slug}`).then(r => r.json());
         if (catalog.platforms) {
           setPlatforms(catalog.platforms);
+          if (catalog.store?.wallet_binance) setWalletAddress(catalog.store.wallet_binance);
+          if (catalog.store?.trc20_address) setWalletTrc20(catalog.store.trc20_address);
+          if (catalog.store?.business_name) setStoreName(catalog.store.business_name);
           if (platformKey) {
             const preselected = catalog.platforms.find((p: any) => p.key === platformKey);
             if (preselected) {
@@ -38,9 +43,6 @@ export function BuyFlow() {
             }
           }
         }
-
-        const paymentInfo = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/public/payment-info`).then(r => r.json());
-        setWalletAddress(paymentInfo.wallet || 'CONFIGURAR_WALLET');
       } catch {
         // Ignore
       }
@@ -134,25 +136,22 @@ return (
           </div>
 
           <div className="card shadow-ring-1" style={{ marginBottom: 20 }}>
-            <h3 style={{ marginBottom: 12, fontSize: 15 }}>Wallet de pago</h3>
-            <div style={{
-              fontFamily: 'ui-monospace, monospace',
-              fontSize: 14,
-              background: 'rgb(var(--bg))',
-              border: '1px solid rgb(var(--border))',
-              borderRadius: 10,
-              padding: 12,
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}>
-              <span>{walletAddress || 'CONFIGURAR_WALLET'}</span>
-              <button onClick={() => navigator.clipboard.writeText(walletAddress || '')} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>
-                Copiar
-              </button>
-            </div>
+            <h3 style={{ marginBottom: 12, fontSize: 15 }}>Wallet de pago {storeName && `— ${storeName}`}</h3>
+            {walletAddress && <>
+              <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 14, background: 'rgb(var(--bg))', border: '1px solid rgb(var(--border))', borderRadius: 10, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: walletTrc20 ? 8 : 0 }}>
+                <span>{walletAddress}</span>
+                <button onClick={() => navigator.clipboard.writeText(walletAddress || '')} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>Copiar</button>
+              </div>
+              {walletTrc20 && (
+                <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 14, background: 'rgb(var(--bg))', border: '1px solid rgb(var(--border))', borderRadius: 10, padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{walletTrc20}</span>
+                  <button onClick={() => navigator.clipboard.writeText(walletTrc20 || '')} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>Copiar</button>
+                </div>
+              )}
+            </>}
+            {!walletAddress && <p style={{ fontSize: 13, color: 'rgb(var(--subtle))' }}>El vendedor aún no configura su billetera. Contacta al soporte.</p>}
             <p style={{ marginTop: 8, fontSize: 12, color: 'rgb(var(--subtle))' }}>
-              Envía exactamente <strong>${platform.price_usd} USDT</strong> a esta wallet desde tu cuenta Binance.
+              Envía exactamente <strong>${platform.price_usd} USDT</strong> a {walletTrc20 ? 'cualquiera de estas cuentas (UID Binance o TRC20 Fiat)' : 'esta wallet (UID de Binance)'} desde tu cuenta Binance.
             </p>
           </div>
 

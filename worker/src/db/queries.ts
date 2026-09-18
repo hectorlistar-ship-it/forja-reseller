@@ -279,6 +279,85 @@ export async function markAccountSold(db: Db, accountId: number, clientId: numbe
 }
 
 // ============================================
+// STORE BUSINESS SETTINGS (Mi negocio)
+// ============================================
+
+// Returns non-secret business settings (never the encrypted secrets).
+export interface BusinessSettings {
+  id: number;
+  name: string;
+  business_name: string | null;
+  wallet_binance: string | null;
+  trc20_address: string | null;
+  gmail_user: string | null;
+  bot_token_set: boolean;
+  gmail_password_set: boolean;
+}
+
+export async function getBusinessSettings(db: Db, storeId: number): Promise<BusinessSettings | null> {
+  return db.first<BusinessSettings>(
+    `SELECT id, name, business_name, wallet_binance, trc20_address, gmail_user,
+            CASE WHEN bot_token IS NOT NULL THEN 1 ELSE 0 END as bot_token_set,
+            CASE WHEN gmail_app_password IS NOT NULL THEN 1 ELSE 0 END as gmail_password_set
+     FROM stores WHERE id = ?`,
+    [storeId]
+  );
+}
+
+export interface BusinessSettingsInput {
+  name?: string;
+  businessName?: string;
+  walletBinance?: string;   // UID Binance
+  trc20Address?: string;   // dirección TRC20 (opcional)
+  gmailUser?: string;
+  gmailAppPassword?: string;
+  botToken?: string;
+}
+
+export async function updateBusinessSettings(db: Db, env: Env, storeId: number, data: BusinessSettingsInput) {
+  const fields: string[] = [];
+  const values: any[] = [];
+
+  if (data.name) { fields.push('name = ?'); values.push(data.name); }
+  if (data.businessName !== undefined) { fields.push('business_name = ?'); values.push(data.businessName || null); }
+  if (data.walletBinance !== undefined) { fields.push('wallet_binance = ?'); values.push(data.walletBinance || null); }
+  if (data.trc20Address !== undefined) { fields.push('trc20_address = ?'); values.push(data.trc20Address || null); }
+  if (data.gmailUser !== undefined) { fields.push('gmail_user = ?'); values.push(data.gmailUser || null); }
+  if (data.gmailAppPassword !== undefined) {
+    fields.push('gmail_app_password = ?');
+    values.push(data.gmailAppPassword ? await encryptSecret(env, data.gmailAppPassword) : null);
+  }
+  if (data.botToken !== undefined) {
+    fields.push('bot_token = ?');
+    values.push(data.botToken ? await encryptSecret(env, data.botToken) : null);
+  }
+
+  if (fields.length === 0) return { success: true, meta: { changes: 0 } };
+  fields.push('updated_at = ?');
+  values.push(Math.floor(Date.now() / 1000));
+  values.push(storeId);
+  return db.run(`UPDATE stores SET ${fields.join(', ')} WHERE id = ?`, values);
+}
+
+// Decrypts a store's Telegram bot token (single shared bot per store).
+export async function getStoreBotToken(env: Env, db: Db, storeId: number): Promise<string | null> {
+  const row = await db.first<{ bot_token: string }>(`SELECT bot_token FROM stores WHERE id = ?`, [storeId]);
+  if (!row?.bot_token) return null;
+  return decryptSecret(env, row.bot_token);
+}
+
+// Decrypts a store's Gmail credentials used by the bridge for auto-validation.
+export async function getStoreGmailCredentials(env: Env, db: Db, storeId: number): Promise<{ user: string; appPassword: string } | null> {
+  const row = await db.first<{ gmail_user: string; gmail_app_password: string }>(
+    `SELECT gmail_user, gmail_app_password FROM stores WHERE id = ?`,
+    [storeId]
+  );
+  if (!row?.gmail_user || !row?.gmail_app_password) return null;
+  const appPassword = await decryptSecret(env, row.gmail_app_password);
+  return { user: row.gmail_user, appPassword };
+}
+
+// ============================================
 // CLIENTS
 // ============================================
 
