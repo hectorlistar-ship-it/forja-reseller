@@ -284,9 +284,20 @@ function InventarioTab({ storeId }: { storeId: number }) {
 }
 
 function AddAccountsForm({ storeId, onAdded }: { storeId: number; onAdded: () => void }) {
-  const [platform, setPlatform] = useState('netflix');
+  const [platforms, setPlatforms] = useState<any[]>([]);
+  const [platform, setPlatform] = useState('');
   const [raw, setRaw] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.get<{ platforms: any[] }>(`/api/admin/inventory?store_id=${storeId}`)
+      .then(d => {
+        const plats = d.platforms || [];
+        setPlatforms(plats);
+        if (plats.length > 0) setPlatform(plats[0].platform_key);
+      })
+      .catch(() => {});
+  }, [storeId]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,14 +333,15 @@ function AddAccountsForm({ storeId, onAdded }: { storeId: number; onAdded: () =>
     <form onSubmit={submit} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <div>
         <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Plataforma</label>
-        <select value={platform} onChange={e => setPlatform(e.target.value)} style={{ width: '100%', padding: '10px' }}>
-          <option value="netflix">Netflix</option>
-          <option value="hbo">HBO Max</option>
-          <option value="disney">Disney+</option>
-          <option value="vix">Vix</option>
-          <option value="spotify">Spotify Premium</option>
-          <option value="youtube">YouTube Premium</option>
-        </select>
+        {platforms.length === 0 ? (
+          <p style={{ fontSize: '13px', color: 'var(--muted)' }}>No hay plataformas disponibles para esta tienda.</p>
+        ) : (
+          <select value={platform} onChange={e => setPlatform(e.target.value)} style={{ width: '100%', padding: '10px' }}>
+            {platforms.map((p: any) => (
+              <option key={p.platform_key} value={p.platform_key}>{p.name}</option>
+            ))}
+          </select>
+        )}
       </div>
       <div>
         <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>
@@ -343,7 +355,7 @@ function AddAccountsForm({ storeId, onAdded }: { storeId: number; onAdded: () =>
           style={{ width: '100%', padding: '10px', fontFamily: 'ui-monospace, monospace', fontSize: '13px' }}
         />
       </div>
-      <button className="btn btn-primary" disabled={loading} style={{ padding: '12px' }}>
+      <button className="btn btn-primary" disabled={loading || platforms.length === 0} style={{ padding: '12px' }}>
         {loading ? 'Agregando...' : 'Agregar al inventario'}
       </button>
     </form>
