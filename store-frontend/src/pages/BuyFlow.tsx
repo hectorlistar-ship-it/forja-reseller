@@ -81,36 +81,36 @@ export function BuyFlow() {
 
   if (!slug) return <div style={{ textAlign: 'center', padding: '60px 20px' }}>Tienda no especificada</div>;
 
-  return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <Link to={`/tienda/${slug}`} style={{ color: 'var(--accent)', textDecoration: 'none', fontSize: '14px' }}>← Volver al catálogo</Link>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, marginTop: '8px', marginBottom: '4px' }}>Comprar cuenta</h1>
-        <p style={{ color: 'var(--muted)' }}>Paga con USDT y recibe tu cuenta al instante</p>
+return (
+    <div style={{ maxWidth: 640, margin: '0 auto', padding: '24px 20px' }}>
+      <div style={{ marginBottom: 24 }}>
+        <Link to={`/tienda/${slug}`} style={{ color: 'rgb(var(--ring-strong))', textDecoration: 'none', fontSize: 14 }}>← Volver al catálogo</Link>
+        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 30, fontWeight: 500, marginTop: 12, marginBottom: 4 }}>Comprar cuenta</h1>
+        <p style={{ color: 'rgb(var(--muted))' }}>Paga con USDT y recibe tu cuenta al instante</p>
       </div>
 
       {step === 'select' && platforms.length > 0 && (
         <div>
-          <h2 style={{ marginBottom: '16px', fontSize: '18px' }}>Selecciona plataforma</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }}>
+          <h2 style={{ marginBottom: 16, fontSize: 18, fontFamily: 'var(--font-serif)', fontWeight: 500 }}>Selecciona plataforma</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
             {platforms
               .filter((p: any) => p.stock > 0)
               .map((p: any) => (
                 <button
                   key={p.key}
                   onClick={() => handlePlatformSelect(p)}
+                  className="shadow-ring-1"
                   style={{
                     textAlign: 'left',
-                    padding: '16px',
-                    background: 'var(--panel)',
-                    border: '1px solid var(--line)',
-                    borderRadius: '8px',
+                    padding: 16,
+                    background: 'rgb(var(--surface))',
+                    borderRadius: 'var(--radius)',
                     cursor: 'pointer',
-                    transition: 'all 0.2s',
+                    transition: 'box-shadow 0.2s, transform 0.2s',
                   }}
                 >
-                  <div style={{ fontWeight: 600, fontSize: '16px', marginBottom: '4px' }}>{p.name}</div>
-                  <div style={{ color: 'var(--muted)', fontSize: '13px' }}>${p.price_usd} USDT · {p.stock} disponibles</div>
+                  <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>{p.name}</div>
+                  <div style={{ color: 'rgb(var(--muted))', fontSize: 13 }}>${p.price_usd} USDT · {p.stock} disponibles</div>
                 </button>
               ))}
           </div>
@@ -119,45 +119,45 @@ export function BuyFlow() {
 
       {step === 'pay' && platform && (
         <div>
-          <h2 style={{ marginBottom: '16px' }}>Paso 1: Paga en Binance</h2>
+          <h2 style={{ marginBottom: 16, fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 500 }}>Paso 1: Paga en Binance</h2>
 
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <h3 style={{ marginBottom: '12px' }}>Detalles de la compra</h3>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <div className="card shadow-ring-1" style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 12, fontSize: 15 }}>Detalles de la compra</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
               <span>{platform.name}</span>
-              <strong style={{ color: 'var(--accent)', fontSize: '20px' }}>${platform.price_usd} USDT</strong>
+              <strong style={{ color: 'rgb(var(--gold))', fontSize: 22 }}>${platform.price_usd} USDT</strong>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--muted)', fontSize: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgb(var(--muted))', fontSize: 14 }}>
               <span>Tu usuario Binance</span>
               <strong>@{binanceUser || '—'}</strong>
             </div>
           </div>
 
-          <div className="card" style={{ marginBottom: '20px' }}>
-            <h3 style={{ marginBottom: '12px' }}>Wallet de pago</h3>
+          <div className="card shadow-ring-1" style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 12, fontSize: 15 }}>Wallet de pago</h3>
             <div style={{
               fontFamily: 'ui-monospace, monospace',
-              fontSize: '14px',
-              background: 'var(--bg)',
-              border: '1px solid var(--line)',
-              borderRadius: '6px',
-              padding: '12px',
+              fontSize: 14,
+              background: 'rgb(var(--bg))',
+              border: '1px solid rgb(var(--border))',
+              borderRadius: 10,
+              padding: 12,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
             }}>
               <span>{walletAddress || 'CONFIGURAR_WALLET'}</span>
-              <button onClick={() => navigator.clipboard.writeText(walletAddress || '')} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '12px' }}>
+              <button onClick={() => navigator.clipboard.writeText(walletAddress || '')} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: 12 }}>
                 Copiar
               </button>
             </div>
-            <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--dim)' }}>
+            <p style={{ marginTop: 8, fontSize: 12, color: 'rgb(var(--subtle))' }}>
               Envía exactamente <strong>${platform.price_usd} USDT</strong> a esta wallet desde tu cuenta Binance.
             </p>
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--muted)' }}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgb(var(--muted))' }}>
               Tu usuario de Binance (ej: @juan123)
             </label>
             <input
@@ -166,11 +166,11 @@ export function BuyFlow() {
               onChange={e => setBinanceUser(e.target.value)}
               placeholder="@tuusuario"
               required
-              style={{ width: '100%', padding: '12px' }}
+              style={{ width: '100%', padding: 12 }}
             />
           </div>
 
-          <button onClick={handleBuy} disabled={loading || !binanceUser.trim()} className="btn btn-primary" style={{ width: '100%', padding: '14px' }}>
+          <button onClick={handleBuy} disabled={loading || !binanceUser.trim()} className="btn btn-primary" style={{ width: '100%', padding: 14 }}>
             {loading ? 'Procesando...' : 'He pagado, verificar pago'}
           </button>
         </div>
@@ -178,11 +178,11 @@ export function BuyFlow() {
 
       {step === 'verify' && paymentId && (
         <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <h2 style={{ marginBottom: '12px' }}>Confirma tu pago</h2>
-          <p style={{ color: 'var(--muted)', marginBottom: '24px' }}>
+          <h2 style={{ marginBottom: 12, fontFamily: 'var(--font-serif)', fontWeight: 500, fontSize: 24 }}>Confirma tu pago</h2>
+          <p style={{ color: 'rgb(var(--muted))', marginBottom: 24 }}>
             Cuando termines de pagar en Binance, verifica el estado de tu compra.
           </p>
-          <button onClick={() => navigate(`/binance-pago/${paymentId}`)} className="btn btn-primary" style={{ width: '100%', padding: '14px', marginBottom: '12px' }}>
+          <button onClick={() => navigate(`/binance-pago/${paymentId}`)} className="btn btn-primary" style={{ width: '100%', padding: 14, marginBottom: 12 }}>
             Verificar pago
           </button>
           <button onClick={() => { setStep('pay'); setPaymentId(null); }} className="btn btn-ghost">

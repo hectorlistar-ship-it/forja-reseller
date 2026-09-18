@@ -36,66 +36,75 @@ export function LoginRegister() {
     return <div style={{ textAlign: 'center', padding: '60px 20px' }}>Tienda no especificada</div>;
   }
 
-  return (
-    <div style={{ maxWidth: '400px', margin: '60px auto', padding: '20px' }}>
-      <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 700, marginBottom: '8px' }}>
-          {isLogin ? 'Iniciar sesión' : 'Crear cuenta'}
-        </h1>
-        <p style={{ color: 'var(--muted)' }}>Tienda: <strong>{slug}</strong></p>
-      </div>
-
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div>
-          <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--muted)' }}>
-            Usuario
-          </label>
-          <input
-            type="text"
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            required
-            minLength={3}
-            autoComplete="username"
-            placeholder="usuario"
-          />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', color: 'var(--muted)' }}>
-            Contraseña
-          </label>
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            minLength={4}
-            autoComplete={isLogin ? 'current-password' : 'new-password'}
-            placeholder="contraseña"
-          />
-        </div>
-
-        {error && (
-          <div style={{ color: 'var(--bad)', fontSize: '13px', textAlign: 'center', padding: '8px', background: 'rgba(239,68,68,0.1)', borderRadius: '6px' }}>
-            {error}
+return (
+    <div style={{ maxWidth: 420, margin: '80px auto 40px', padding: '0 20px' }}>
+      <div className="shadow-ring-1 card" style={{ padding: '36px 32px', borderRadius: 'var(--radius-lg)' }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{ width: 52, height: 52, margin: '0 auto 16px', borderRadius: 14, background: 'linear-gradient(135deg, rgb(var(--ring-strong)), rgb(var(--gold)))', display: 'grid', placeItems: 'center', fontSize: 24, fontWeight: 800, color: '#0a0a12', fontFamily: 'var(--font-serif)', boxShadow: '0 0 26px rgb(var(--brand) / 0.4)' }}>
+            {slug.charAt(0).toUpperCase()}
           </div>
-        )}
+          <h1 style={{ fontSize: 26, fontWeight: 500, fontFamily: 'var(--font-serif)', margin: '0 0 6px' }}>
+            {isLogin ? 'Iniciar sesión' : 'Crear cuenta'}
+          </h1>
+          <p style={{ color: 'rgb(var(--muted))', fontSize: 14, margin: 0 }}>
+            {isLogin ? 'Tu cuentas y pedidos en un solo lugar' : 'Únete y activa el pago con USDT'}
+          </p>
+        </div>
 
-        <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', padding: '14px' }}>
-          {loading ? 'Cargando...' : (isLogin ? 'Entrar' : 'Crear cuenta')}
-        </button>
-      </form>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgb(var(--muted))' }}>
+              Usuario
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              required
+              minLength={3}
+              autoComplete="username"
+              placeholder="usuario"
+              style={{ width: '100%' }}
+            />
+          </div>
 
-      <p style={{ textAlign: 'center', marginTop: '20px', color: 'var(--muted)', fontSize: '14px' }}>
-        {isLogin ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'} {' '}
-        <button
-          onClick={() => setIsLogin(!isLogin)}
-          style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
-        >
-          {isLogin ? 'Regístrate' : 'Inicia sesión'}
-        </button>
-      </p>
+          <div>
+            <label style={{ display: 'block', marginBottom: 6, fontSize: 13, color: 'rgb(var(--muted))' }}>
+              Contraseña
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              minLength={4}
+              autoComplete={isLogin ? 'current-password' : 'new-password'}
+              placeholder="contraseña"
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          {error && (
+            <div style={{ color: 'rgb(var(--bad))', fontSize: 13, textAlign: 'center', padding: '10px', background: 'rgb(var(--bad) / 0.1)', borderRadius: 10, border: '1px solid rgb(var(--bad) / 0.25)' }}>
+              {error}
+            </div>
+          )}
+
+          <button type="submit" className="btn btn-primary" disabled={loading} style={{ width: '100%', padding: '14px' }}>
+            {loading ? 'Cargando...' : (isLogin ? 'Entrar' : 'Crear cuenta')}
+          </button>
+        </form>
+
+        <p style={{ textAlign: 'center', marginTop: 20, color: 'rgb(var(--muted))', fontSize: 14 }}>
+          {isLogin ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'} {' '}
+          <button
+            onClick={() => setIsLogin(!isLogin)}
+            style={{ background: 'none', border: 'none', color: 'rgb(var(--ring-strong))', cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
+          >
+            {isLogin ? 'Regístrate' : 'Inicia sesión'}
+          </button>
+        </p>
+      </div>
     </div>
   );
 }

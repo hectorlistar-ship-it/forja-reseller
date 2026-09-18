@@ -150,23 +150,25 @@ export async function upsertPlatform(db: Db, data: {
   name: string;
   type: string;
   icon?: string;
+  imageUrl?: string;
   costPrice: number;
   salePrice: number;
   isActive?: number;
   sortOrder?: number;
 }) {
   return db.run(
-    `INSERT INTO platforms (key, name, type, icon, cost_price_usd, sale_price_usd, is_active, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO platforms (key, name, type, icon, image_url, cost_price_usd, sale_price_usd, is_active, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET
        name = excluded.name,
        type = excluded.type,
        icon = excluded.icon,
+       image_url = excluded.image_url,
        cost_price_usd = excluded.cost_price_usd,
        sale_price_usd = excluded.sale_price_usd,
        is_active = excluded.is_active,
        sort_order = excluded.sort_order`,
-    [data.key, data.name, data.type, data.icon || null, data.costPrice, data.salePrice, data.isActive ?? 1, data.sortOrder ?? 0]
+    [data.key, data.name, data.type, data.icon || null, data.imageUrl || null, data.costPrice, data.salePrice, data.isActive ?? 1, data.sortOrder ?? 0]
   );
 }
 
@@ -185,7 +187,7 @@ export async function setStorePlatformPrice(db: Db, storeId: number, platformKey
 
 export async function getStorePlatforms(db: Db, storeId: number) {
   return db.all(
-    `SELECT sp.*, p.name, p.type, p.icon
+    `SELECT sp.*, p.name, p.type, p.icon, p.image_url
      FROM store_platforms sp
      JOIN platforms p ON sp.platform_key = p.key
      WHERE sp.store_id = ? AND sp.is_active = 1 AND p.is_active = 1

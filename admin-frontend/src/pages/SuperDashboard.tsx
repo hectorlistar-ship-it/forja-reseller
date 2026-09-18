@@ -195,12 +195,62 @@ function PlatformsTab() {
 
       <div style={{ display: 'grid', gap: '8px', marginTop: '12px' }}>
         {platforms.map((p: any) => (
-          <div key={p.key} className="card" style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>{p.name} <span style={{ color: 'var(--muted)' }}>({p.key})</span></span>
-            <span>${p.cost_price_usd} costo → ${p.sale_price_usd} venta</span>
-          </div>
+          <PlatformRow key={p.key} platform={p} onChanged={load} />
         ))}
         {platforms.length === 0 && <p style={{ color: 'var(--muted)' }}>Sin plataformas configuradas.</p>}
+      </div>
+    </div>
+  );
+}
+
+function PlatformRow({ platform, onChanged }: { platform: any; onChanged: () => void }) {
+  const [imageUrl, setImageUrl] = useState(platform.image_url || '');
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.post('/api/super/platforms', {
+        key: platform.key,
+        name: platform.name,
+        type: platform.type,
+        icon: platform.icon,
+        image_url: imageUrl.trim(),
+        cost_price: platform.cost_price_usd,
+        sale_price: platform.sale_price_usd,
+        is_active: platform.is_active,
+        sort_order: platform.sort_order,
+      });
+      toast.success('Imagen guardada');
+      onChanged();
+    } catch (err: any) {
+      toast.error(err.message || 'Error al guardar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {imageUrl ? (
+            <img src={imageUrl} alt={platform.name} onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} style={{ width: 32, height: 32, objectFit: 'contain' }} />
+          ) : null}
+          <span>{platform.name} <span style={{ color: 'var(--muted)' }}>({platform.key})</span></span>
+        </span>
+        <span>${platform.cost_price_usd} costo → ${platform.sale_price_usd} venta</span>
+      </div>
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <input
+          value={imageUrl}
+          onChange={e => setImageUrl(e.target.value)}
+          placeholder="URL de la imagen (PNG, JPG, SVG…)"
+          style={{ flex: 1, minWidth: '220px', padding: '10px' }}
+        />
+        <button onClick={save} className="btn btn-primary" disabled={saving} style={{ padding: '10px 16px' }}>
+          {saving ? 'Guardando...' : 'Guardar imagen'}
+        </button>
       </div>
     </div>
   );
@@ -210,6 +260,7 @@ function NewPlatformForm({ onCreated }: { onCreated: () => void }) {
   const [key, setKey] = useState('');
   const [name, setName] = useState('');
   const [type, setType] = useState('streaming');
+  const [imageUrl, setImageUrl] = useState('');
   const [cost, setCost] = useState('');
   const [sale, setSale] = useState('');
   const [loading, setLoading] = useState(false);
@@ -220,12 +271,13 @@ function NewPlatformForm({ onCreated }: { onCreated: () => void }) {
     try {
       await api.post('/api/super/platforms', {
         key, name, type,
+        image_url: imageUrl.trim(),
         cost_price: Number(cost),
         sale_price: Number(sale),
         is_active: 1,
       });
       toast.success('Plataforma guardada');
-      setKey(''); setName(''); setCost(''); setSale('');
+      setKey(''); setName(''); setType('streaming'); setImageUrl(''); setCost(''); setSale('');
       onCreated();
     } catch (err: any) {
       toast.error(err.message || 'Error al guardar');
@@ -247,6 +299,10 @@ function NewPlatformForm({ onCreated }: { onCreated: () => void }) {
       <div>
         <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Tipo</label>
         <input value={type} onChange={e => setType(e.target.value)} style={{ padding: '10px', width: '110px' }} />
+      </div>
+      <div style={{ flexBasis: '100%' }}>
+        <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>URL de la imagen (opcional)</label>
+        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://.../netflix.png" style={{ padding: '10px', width: '100%' }} />
       </div>
       <div>
         <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Costo</label>

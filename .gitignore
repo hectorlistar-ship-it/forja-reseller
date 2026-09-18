@@ -36,3 +36,6 @@ render.yaml
 tmp/
 temp/
 *.tmp
+
+# Wrangler local cache
+.wrangler/

@@ -65,6 +65,7 @@ app.get('/api/public/catalog/:slug', async (c) => {
       name: p.name,
       type: p.type,
       icon: p.icon,
+      image_url: p.image_url,
       price_usd: p.sale_price_usd,
       stock: inv?.available ?? 0,
     };
@@ -376,6 +377,7 @@ app.post('/api/super/platforms', ...superAdminAuth, async (c) => {
     name: body.name,
     type: body.type,
     icon: body.icon,
+    imageUrl: body.image_url,
     costPrice: body.cost_price,
     salePrice: body.sale_price,
     isActive: body.is_active ?? 1,

@@ -4,6 +4,8 @@ compatibility_date = "2024-01-01"
 compatibility_flags = ["nodejs_compat"]
 account_id = "91fa55eaae4ace9b17638f75006e1b7e"
 
+assets = { directory = "./assets" }
+
 [vars]
 ENVIRONMENT = "production"
 BOT_NAME = "Asistente"

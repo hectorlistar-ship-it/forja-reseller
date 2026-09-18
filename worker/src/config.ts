@@ -12,6 +12,7 @@ export interface Env {
   GMAIL_APP_PASSWORD: string;
   ENCRYPTION_KEY: string; // 32 random bytes, base64 - encrypts stored account passwords
   TELEGRAM_ADMIN_CHAT_ID?: string; // chat id that receives sale notifications
+  STORE_URL?: string; // base URL of the store frontend
   
   // Vars
   ENVIRONMENT: string;
