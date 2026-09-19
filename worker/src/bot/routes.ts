@@ -60,6 +60,26 @@ botRoutes.post('/webhook/:storeId', async (c) => {
     return c.json({ ok: true });
   }
 
+  // Bot added/promoted to admin in a group → register chat for daily promos
+  if (update.my_chat_member) {
+    const mcm = update.my_chat_member;
+    const chat = mcm.chat;
+    const newStatus = mcm.new_chat_member?.status;
+    if (chat && (chat.type === 'group' || chat.type === 'supergroup')) {
+      const db = createDb(c.env);
+      if (newStatus === 'administrator' || newStatus === 'creator') {
+        await queries.addStorePromoChat(db, store.id, chat.id, chat.title || null);
+        await sendTelegramMessage(botToken, chat.id,
+          `✅ ¡Listo! Este grupo quedó registrado para las *promos diarias*.\n\n📅 Se publicarán los servicios de tu tienda a las *8:30 AM* y *2:00 PM* (hora local de tu tienda).`,
+          { parse_mode: 'Markdown' }
+        );
+      } else if (newStatus === 'left' || newStatus === 'kicked') {
+        await queries.deactivateStorePromoChat(db, store.id, chat.id);
+      }
+    }
+    return c.json({ ok: true });
+  }
+
   // Basic webhook handling - in production use proper Telegram bot library
   const message = update.message;
   if (!message || !message.text) {
@@ -338,6 +358,27 @@ async function sendPromoCard(c: any, botToken: string, store: any, chatId: numbe
     await sendTelegramMessage(botToken, chatId, `No pude cargar tu imagen personalizada para ${platform.name}. Verifica la URL en tu panel.`);
   }
   console.log(`[bot] promo sent for ${key} in chat ${chatId}`);
+}
+
+// Envía las promos de TODAS las plataformas con stock de la tienda a un chat
+// (usado por el cron diario). Devuelve cuántas se publicaron.
+export async function sendAllPromos(env: any, botToken: string, store: any, chatId: number): Promise<number> {
+  const db = createDb(env);
+  const platforms: any[] = await getStorePlatforms(db, store.id);
+  const storeUrl = env.STORE_URL || STORE_FRONTEND_URL;
+  const storeLink = `${storeUrl}/tienda/${store.slug}`;
+
+  let count = 0;
+  for (const p of platforms) {
+    if (p.stock <= 0) continue;
+    await sendPromoCard(env, botToken, store, chatId, p, storeLink);
+    count++;
+  }
+  if (count === 0) {
+    // Nada con stock: avisar en el grupo que no hay promos hoy
+    await sendTelegramMessage(botToken, chatId, '📭 Hoy no hay servicios con stock para promocionar. Checa tu panel e ingresa cuentas.');
+  }
+  return count;
 }
 
 async function handlePurchase(c: any, botToken: string, store: any, chatId: number, userId: number, username: string | undefined, platformKey: string) {

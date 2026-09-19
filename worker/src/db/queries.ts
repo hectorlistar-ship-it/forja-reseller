@@ -293,13 +293,17 @@ export interface BusinessSettings {
   gmail_user: string | null;
   bot_token_set: boolean;
   gmail_password_set: boolean;
+  promo_enabled: boolean;
+  promo_timezone: number;
 }
 
 export async function getBusinessSettings(db: Db, storeId: number): Promise<BusinessSettings | null> {
   return db.first<BusinessSettings>(
     `SELECT id, name, business_name, wallet_binance, trc20_address, gmail_user,
             CASE WHEN bot_token IS NOT NULL THEN 1 ELSE 0 END as bot_token_set,
-            CASE WHEN gmail_app_password IS NOT NULL THEN 1 ELSE 0 END as gmail_password_set
+            CASE WHEN gmail_app_password IS NOT NULL THEN 1 ELSE 0 END as gmail_password_set,
+            CASE WHEN promo_enabled IS NOT NULL AND promo_enabled = 1 THEN 1 ELSE 0 END as promo_enabled,
+            COALESCE(promo_timezone, -180) as promo_timezone
      FROM stores WHERE id = ?`,
     [storeId]
   );
@@ -655,4 +659,64 @@ export async function setGlobalSetting(db: Db, key: string, value: string) {
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     [key, value]
   );
+}
+
+// ============================================
+// PROMOS AUTOMÁTICAS (chats de grupo por tienda)
+// ============================================
+
+export async function addStorePromoChat(db: Db, storeId: number, chatId: number, chatTitle?: string) {
+  return db.run(
+    `INSERT INTO store_promo_chats (store_id, chat_id, chat_title, is_active)
+     VALUES (?, ?, ?, 1)
+     ON CONFLICT(store_id, chat_id) DO UPDATE SET is_active = 1, chat_title = excluded.chat_title`,
+    [storeId, chatId, chatTitle ?? null]
+  );
+}
+
+export async function deactivateStorePromoChat(db: Db, storeId: number, chatId: number) {
+  return db.run(
+    `UPDATE store_promo_chats SET is_active = 0 WHERE store_id = ? AND chat_id = ?`,
+    [storeId, chatId]
+  );
+}
+
+export async function listStorePromoChats(db: Db, storeId: number) {
+  return db.all(
+    `SELECT * FROM store_promo_chats WHERE store_id = ? AND is_active = 1 ORDER BY created_at DESC`,
+    [storeId]
+  );
+}
+
+export async function markPromoChatSent(db: Db, storeId: number, chatId: number, sentKey: string) {
+  return db.run(
+    `UPDATE store_promo_chats SET last_sent_key = ? WHERE store_id = ? AND chat_id = ?`,
+    [sentKey, storeId, chatId]
+  );
+}
+
+export async function listAllPromoChats(db: Db) {
+  return db.all(
+    `SELECT spc.*, s.slug, s.promo_enabled, s.promo_timezone, s.bot_token
+     FROM store_promo_chats spc
+     JOIN stores s ON spc.store_id = s.id
+     WHERE spc.is_active = 1 AND s.promo_enabled = 1 AND s.status = 'active'
+     ORDER BY spc.store_id, spc.chat_id`
+  );
+}
+
+export async function listPromoEnabledStores(db: Db) {
+  return db.all(
+    `SELECT id, slug, promo_enabled, promo_timezone, bot_token FROM stores WHERE status = 'active' AND promo_enabled = 1`
+  );
+}
+
+export async function setStorePromoConfig(db: Db, storeId: number, enabled?: number, timezone?: number) {
+  const fields: string[] = [];
+  const values: any[] = [];
+  if (enabled !== undefined) { fields.push('promo_enabled = ?'); values.push(enabled ? 1 : 0); }
+  if (timezone !== undefined) { fields.push('promo_timezone = ?'); values.push(timezone); }
+  if (fields.length === 0) return null;
+  values.push(storeId);
+  return db.run(`UPDATE stores SET ${fields.join(', ')} WHERE id = ?`, values);
 }

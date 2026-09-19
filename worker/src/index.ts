@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import type { Env } from './config';
 import { PLANS } from './config';
 import { createDb } from './db/client';
+import { decryptSecret } from './crypto';
 import * as queries from './db/queries';
 import {
   createAuthMiddleware,
@@ -20,6 +21,7 @@ import {
 import storeRoutes from './store/routes';
 import { botRoutes } from './bot/routes';
 import { binanceRoutes } from './binance/routes';
+import * as scheduledModule from './scheduled';
 
 const app = new Hono<{ Bindings: Env; Variables: { user: any } }>();
 
@@ -702,6 +704,11 @@ app.put('/api/admin/mi-negocio', ...resellerAuth, async (c) => {
     botToken: body.bot_token,
   });
 
+  await queries.setStorePromoConfig(db, storeId,
+    body.promo_enabled !== undefined ? Number(body.promo_enabled) : undefined,
+    body.promo_timezone !== undefined ? Number(body.promo_timezone) : undefined
+  );
+
   // If the vendor provided a bot token, register the per-store webhook so
   // Telegram delivers this bot's updates to /webhooks/webhook/{storeId}.
   if (body.bot_token) {
@@ -711,12 +718,64 @@ app.put('/api/admin/mi-negocio', ...resellerAuth, async (c) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         url: webhookUrl,
-        allowed_updates: ['message', 'callback_query'],
+        allowed_updates: ['message', 'callback_query', 'my_chat_member'],
       }),
     }).catch((e: any) => console.error('[mi-negocio] setWebhook error:', e));
   }
 
   return c.json({ message: 'Datos de negocio guardados' });
+});
+
+// Print promo chats for a store (panel: which groups are registered)
+app.get('/api/admin/promos/chats', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const chats = await queries.listStorePromoChats(db, storeId);
+  const store = await queries.getStoreById(db, storeId) as any;
+  return c.json({
+    promo_enabled: store?.promo_enabled ? 1 : 0,
+    promo_timezone: store?.promo_timezone ?? -180,
+    chats,
+  });
+});
+
+// Manual trigger: publish promos now in all registered chats (used for testing)
+app.post('/api/admin/promos/disparar', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const chats = await queries.listStorePromoChats(db, storeId);
+  if (chats.length === 0) {
+    return c.json({ error: 'No hay grupos registrados. Agrega tu bot a un grupo como administrador.' }, 400);
+  }
+
+  const store = await queries.getStoreById(db, storeId) as any;
+  if (!store) return c.json({ error: 'Tienda no encontrada' }, 404);
+
+  // resolver token del bot del vendedor
+  let botToken: string | null = null;
+  if (store.bot_token) {
+    botToken = await decryptSecret(c.env, store.bot_token).catch(() => null);
+  }
+  if (!botToken) botToken = c.env.TELEGRAM_BOT_TOKEN || null;
+  if (!botToken) return c.json({ error: 'No hay bot configurado' }, 400);
+
+  const { sendAllPromos } = await import('./bot/routes');
+  let total = 0;
+  for (const chat of chats) {
+    const count = await sendAllPromos(c.env, botToken, { id: store.id, slug: store.slug }, chat.chat_id).catch((e: any) => {
+      console.error('[promos/disparar] error en chat', chat.chat_id, e);
+      return 0;
+    });
+    total += count;
+  }
+
+  return c.json({ message: `${total} promos publicadas en ${chats.length} grupos`, total, groupes: chats.length });
 });
 
 // ============================================
@@ -752,4 +811,7 @@ app.onError((err, c) => {
   return c.json({ error: 'Error interno del servidor' }, 500);
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled: (event: any, env: any, ctx: any) => scheduledModule.scheduled(event, env, ctx),
+};

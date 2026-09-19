@@ -535,6 +535,9 @@ function NegocioTab({ storeId }: { storeId: number }) {
   });
   const [saving, setSaving] = useState(false);
   const [savedSecret, setSavedSecret] = useState<{ gmail?: boolean; token?: boolean }>({});
+  const [promoEnabled, setPromoEnabled] = useState(false);
+  const [promoTimezone, setPromoTimezone] = useState(-180);
+  const [promoChats, setPromoChats] = useState<any[]>([]);
 
   const load = useCallback(() => {
     api.get<{ settings: any }>(`/api/admin/mi-negocio?store_id=${storeId}`)
@@ -551,8 +554,18 @@ function NegocioTab({ storeId }: { storeId: number }) {
           bot_token: '',
         });
         setSavedSecret({ gmail: !!s.gmail_password_set, token: !!s.bot_token_set });
+        setPromoEnabled(!!s.promo_enabled);
+        setPromoTimezone(s.promo_timezone ?? -180);
       })
       .catch(err => toast.error(err.message || 'Error al cargar configuración'));
+
+    api.get<{ promo_enabled: number; promo_timezone: number; chats: any[] }>(`/api/admin/promos/chats?store_id=${storeId}`)
+      .then(d => {
+        setPromoEnabled(!!d.promo_enabled);
+        setPromoTimezone(d.promo_timezone);
+        setPromoChats(d.chats || []);
+      })
+      .catch(() => {});
   }, [storeId]);
 
   useEffect(() => { load(); }, [load]);
@@ -561,7 +574,7 @@ function NegocioTab({ storeId }: { storeId: number }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put(`/api/admin/mi-negocio?store_id=${storeId}`, form);
+      await api.put(`/api/admin/mi-negocio?store_id=${storeId}`, { ...form, promo_enabled: promoEnabled ? 1 : 0, promo_timezone: promoTimezone });
       toast.success('Negocio actualizado');
       load();
     } catch (err: any) {
@@ -612,6 +625,35 @@ function NegocioTab({ storeId }: { storeId: number }) {
           {savedSecret.token && <span className="badge badge-ok">🤖 Bot configurado</span>}
         </Field>
 
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px' }}>
+          <h3 style={{ margin: '0 0 6px', fontSize: '16px' }}>📅 Promos automáticas diarias</h3>
+          <p style={{ margin: '0 0 10px', fontSize: '12px', color: 'var(--muted)' }}>
+            El bot publica tus servicios en tus grupos a las <b>8:30 AM</b> y <b>2:00 PM</b> (hora de tu zona).
+            Agrega tu bot a un grupo como <b>administrador</b> y quedará registrado automáticamente aquí.
+          </p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', marginBottom: '10px' }}>
+            <input type="checkbox" checked={promoEnabled} onChange={e => setPromoEnabled(e.target.checked)} />
+            Activar publicación automática diaria
+          </label>
+          <SelectTimezone prefix="Zona horaria: " value={promoTimezone} onChange={setPromoTimezone} />
+
+          {promoChats.length > 0 && (
+            <div style={{ marginTop: '10px', display: 'grid', gap: '6px' }}>
+              {promoChats.map((chat: any) => (
+                <div key={chat.chat_id} className="card" style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', fontSize: '13px' }}>
+                  <span>{chat.chat_title || `Grupo #${chat.chat_id}`}</span>
+                  <span className="badge badge-ok">📢 Promos activas</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {promoChats.length === 0 && promoEnabled && (
+            <p style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '8px' }}>
+              Aún no hay grupos registrados. Agrega tu bot a un grupo como administrador.
+            </p>
+          )}
+        </div>
+
         <div style={{ display: 'flex', gap: '8px' }}>
           <button className="btn btn-primary" disabled={saving} style={{ padding: '12px 20px' }}>
             {saving ? 'Guardando...' : 'Guardar mi negocio'}
@@ -627,6 +669,26 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     <div>
       <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>{label}</label>
       {children}
+    </div>
+  );
+}
+
+function SelectTimezone({ prefix, value, onChange }: { prefix: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', marginBottom: '8px' }}>
+      <span>{prefix}</span>
+      <select
+        value={value}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{ padding: '6px', fontSize: '13px' }}
+      >
+        <option value={-300}>UTC-5 (Ciudad de México)</option>
+        <option value={-240}>UTC-4 (Rep. Dominicana, Venezuela)</option>
+        <option value={-180}>UTC-3 (Argentina, Chile)</option>
+        <option value={-60}>UTC-1 (Portugal)</option>
+        <option value={0}>UTC (Londres)</option>
+        <option value={60}>UTC+1 (España, Madrid)</option>
+      </select>
     </div>
   );
 }

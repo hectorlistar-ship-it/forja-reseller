@@ -6,6 +6,10 @@ account_id = "91fa55eaae4ace9b17638f75006e1b7e"
 
 assets = { directory = "./assets" }
 
+# Cron: revisa cada 5 min si es hora de publicar promos diarias (08:30 / 14:00 local)
+[triggers]
+crons = ["*/5 * * * *"]
+
 [vars]
 ENVIRONMENT = "production"
 BOT_NAME = "Asistente"
