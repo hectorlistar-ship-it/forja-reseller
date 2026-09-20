@@ -79,6 +79,58 @@ export async function createStore(db: Db, data: {
   );
 }
 
+// Slugs storable en DB (minúsculas, sin acentos).
+export function slugify(input: string): string {
+  const normalized = input.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const slug = normalized.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug || 'producto';
+}
+
+// Agrega un producto a la tienda del vendedor. Si la plataforma aún no existe
+// en el catálogo global (key), se crea como propia del vendedor (owner_store_id).
+// Si ya existe globalmente (netflix, etc.) o es propia del mismo dueño, la reutiliza.
+export async function addStoreProduct(db: Db, store: { id: number; slug: string }, data: {
+  name: string;
+  type: string;
+  costPrice?: number;
+  salePrice?: number;
+  imageUrl?: string;
+  icon?: string;
+}): Promise<{ platformKey: string; created: boolean }> {
+  let baseKey = slugify(data.name);
+  let platformKey = baseKey;
+
+  // Buscar si ya existe global o del mismo vendedor
+  let existing = await db.first<any>(`SELECT * FROM platforms WHERE key = ?`, [platformKey]);
+  if (existing && existing.owner_store_id !== null && existing.owner_store_id !== store.id) {
+    platformKey = `${baseKey}-${store.slug}`;
+    existing = await db.first<any>(`SELECT * FROM platforms WHERE key = ?`, [platformKey]);
+  }
+
+  let created = false;
+  if (!existing) {
+    await db.run(
+      `INSERT INTO platforms (key, name, type, icon, image_url, cost_price_usd, sale_price_usd, is_active, sort_order, owner_store_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, 9999, ?)`,
+      [platformKey, data.name, data.type || 'producto', data.icon || null, data.imageUrl || null,
+       data.costPrice ?? 0, data.salePrice ?? 0, store.id]
+    );
+    created = true;
+  }
+
+  await db.run(
+    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active, promo_image_url)
+     VALUES (?, ?, ?, ?, 1, ?)
+     ON CONFLICT(store_id, platform_key) DO UPDATE SET
+       cost_price_usd = excluded.cost_price_usd,
+       sale_price_usd = excluded.sale_price_usd,
+       is_active = 1`,
+    [store.id, platformKey, data.costPrice ?? null, data.salePrice ?? null, data.imageUrl || null]
+  );
+
+  return { platformKey, created };
+}
+
 export async function getStoreBySlug(db: Db, slug: string) {
   return db.first(`SELECT * FROM stores WHERE slug = ?`, [slug]);
 }

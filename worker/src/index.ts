@@ -485,7 +485,7 @@ app.post('/api/admin/stores', ...resellerAuth, async (c) => {
     walletBinance: wallet_binance,
   });
 
-  return c.json({ message: 'Tienda creada', id: result.meta.last_row_id }, 201);
+  return c.json({ message: 'Tienda creada. Ahora agrega tus productos desde Inventario.', id: result.meta.last_row_id }, 201);
 });
 
 app.put('/api/admin/stores/:id', ...resellerAuth, async (c) => {
@@ -560,6 +560,42 @@ app.post('/api/admin/inventory/add', ...resellerAuth, async (c) => {
 
   const result = await queries.addAccounts(db, c.env, storeId, plataforma, cuentas);
   return c.json({ message: `${result.added} cuentas agregadas`, added: result.added });
+});
+
+// Alta de producto propio del vendedor (streaming, software, herramienta, curso, etc.)
+app.post('/api/admin/inventory/product', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const body = await c.req.json();
+  const { name, type, cost_price_usd, sale_price_usd, image_url, icon } = body;
+
+  if (!name || !String(name).trim()) {
+    return c.json({ error: 'El nombre del producto es requerido' }, 400);
+  }
+  if (body.sale_price_usd === undefined || body.sale_price_usd === null || Number(body.sale_price_usd) <= 0) {
+    return c.json({ error: 'El precio de venta debe ser mayor a 0' }, 400);
+  }
+
+  const store = await queries.getStoreById(db, storeId) as { id: number; slug: string } | null;
+  if (!store) return c.json({ error: 'Tienda no encontrada' }, 404);
+
+  const result = await queries.addStoreProduct(db, store, {
+    name: String(name).trim(),
+    type: String(type || 'producto'),
+    costPrice: cost_price_usd !== undefined ? Number(cost_price_usd) : undefined,
+    salePrice: Number(sale_price_usd),
+    imageUrl: image_url || undefined,
+    icon: icon || undefined,
+  });
+
+  return c.json({
+    message: result.created ? `Producto "${name}" creado y agregado a tu tienda` : `Producto agregado a tu tienda`,
+    platform_key: result.platformKey,
+    created: result.created,
+  }, 201);
 });
 
 // Update per-store platform settings (prices + promo image for /promo cards)

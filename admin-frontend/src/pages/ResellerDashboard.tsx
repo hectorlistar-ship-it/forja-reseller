@@ -243,9 +243,16 @@ function StoreCard({ store, onChanged }: { store: Store; onChanged: () => void }
 function InventarioTab({ storeId }: { storeId: number }) {
   const [platforms, setPlatforms] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showNewProduct, setShowNewProduct] = useState(false);
   const [editingPromo, setEditingPromo] = useState<string | null>(null);
   const [promoUrl, setPromoUrl] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newType, setNewType] = useState('streaming');
+  const [newCost, setNewCost] = useState('');
+  const [newSale, setNewSale] = useState('');
+  const [newImage, setNewImage] = useState('');
+  const [creatingProduct, setCreatingProduct] = useState(false);
 
   const load = useCallback(() => {
     api.get<{ platforms: any[] }>(`/api/admin/inventory?store_id=${storeId}`)
@@ -269,20 +276,95 @@ function InventarioTab({ storeId }: { storeId: number }) {
     }
   };
 
+  const createProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const sale = Number(newSale);
+    if (!newName.trim() || !sale || sale <= 0) {
+      toast.error('Ingresa el nombre y el precio de venta (> 0)');
+      return;
+    }
+    setCreatingProduct(true);
+    try {
+      await api.post(`/api/admin/inventory/product?store_id=${storeId}`, {
+        name: newName.trim(),
+        type: newType,
+        cost_price_usd: newCost === '' ? 0 : Number(newCost),
+        sale_price_usd: sale,
+        image_url: newImage.trim() || undefined,
+      });
+      toast.success('Producto agregado a tu tienda');
+      setNewName(''); setNewCost(''); setNewSale(''); setNewImage('');
+      setShowNewProduct(false);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || 'Error al crear producto');
+    } finally {
+      setCreatingProduct(false);
+    }
+  };
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginBottom: '12px' }}>
+        <button onClick={() => setShowNewProduct(v => !v)} className="btn btn-secondary" style={{ padding: '10px 16px' }}>
+          {showNewProduct ? 'Cancelar' : '+ Agregar producto'}
+        </button>
         <button onClick={() => setShowAdd(v => !v)} className="btn btn-primary" style={{ padding: '10px 16px' }}>
           {showAdd ? 'Cancelar' : '+ Agregar cuentas'}
         </button>
       </div>
+
+      {showNewProduct && (
+        <form onSubmit={createProduct} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Nombre del producto</label>
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="Ej: Photoshop, Curso de Trading, Netflix..."
+              style={{ width: '100%', padding: '10px' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Tipo</label>
+            <select value={newType} onChange={e => setNewType(e.target.value)} style={{ width: '100%', padding: '10px' }}>
+              <option value="streaming">Streaming</option>
+              <option value="software">Software</option>
+              <option value="herramienta">Herramienta</option>
+              <option value="curso">Curso</option>
+              <option value="producto">Producto / Otro</option>
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Precio costo (USDT)</label>
+              <input value={newCost} onChange={e => setNewCost(e.target.value)} placeholder="0" type="number" step="0.01" style={{ width: '100%', padding: '10px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Precio venta (USDT)</label>
+              <input value={newSale} onChange={e => setNewSale(e.target.value)} placeholder="5" type="number" step="0.01" style={{ width: '100%', padding: '10px' }} />
+            </div>
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Imagen (URL, opcional)</label>
+            <input value={newImage} onChange={e => setNewImage(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '10px' }} />
+          </div>
+          <button className="btn btn-primary" disabled={creatingProduct} style={{ padding: '12px' }}>
+            {creatingProduct ? 'Creando...' : 'Crear producto'}
+          </button>
+        </form>
+      )}
 
       {showAdd && (
         <AddAccountsForm storeId={storeId} onAdded={() => { setShowAdd(false); load(); }} />
       )}
 
       <div style={{ display: 'grid', gap: '8px', marginTop: '16px' }}>
-        {platforms.length === 0 && <p style={{ color: 'var(--muted)' }}>Sin plataformas configuradas para esta tienda.</p>}
+        {platforms.length === 0 && (
+          <p style={{ color: 'var(--muted)' }}>
+            Tu tienda está vacía. Usa «+ Agregar producto» para crear el primero (streaming, software, herramientas, cursos...).
+          </p>
+        )}
         {platforms.map((p: any) => (
           <div key={p.platform_key} className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
