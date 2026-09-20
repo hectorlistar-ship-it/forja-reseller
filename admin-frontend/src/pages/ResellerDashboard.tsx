@@ -1,6 +1,73 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../api/http';
 import { toast } from 'react-hot-toast';
+
+// Sube una imagen desde el disco → devuelve URL directa (consultar /api/admin/upload)
+function ImageUploadField({
+  value,
+  onChange,
+  placeholder,
+  label,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+  placeholder?: string;
+  label: string;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const pick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('El archivo debe ser una imagen');
+      return;
+    }
+    setUploading(true);
+    try {
+      const dataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const res = await api.post<{ url: string }>('/api/admin/upload', {
+        data_base64: dataBase64,
+        mime: file.type,
+      });
+      onChange(res.url);
+      toast.success('Imagen subida');
+    } catch (err: any) {
+      toast.error(err.message || 'Error al subir imagen');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div>
+      <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>{label}</label>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder || 'https://... o sube una imagen'}
+          style={{ flex: 1, padding: '10px' }}
+        />
+        <input ref={inputRef} type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />
+        <button type="button" onClick={() => inputRef.current?.click()} className="btn btn-secondary" disabled={uploading} style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>
+          {uploading ? 'Subiendo...' : '⬆️ Subir'}
+        </button>
+      </div>
+      {value.startsWith('/upload/') && (
+        <img src={value} alt="preview" style={{ marginTop: '8px', height: '56px', borderRadius: '8px', objectFit: 'contain' }} />
+      )}
+    </div>
+  );
+}
 
 interface Store {
   id: number;
@@ -345,10 +412,12 @@ function InventarioTab({ storeId }: { storeId: number }) {
               <input value={newSale} onChange={e => setNewSale(e.target.value)} placeholder="5" type="number" step="0.01" style={{ width: '100%', padding: '10px' }} />
             </div>
           </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Imagen (URL, opcional)</label>
-            <input value={newImage} onChange={e => setNewImage(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '10px' }} />
-          </div>
+          <ImageUploadField
+            label="Imagen del producto (opcional)"
+            value={newImage}
+            onChange={setNewImage}
+            placeholder="Pega una URL o súbela"
+          />
           <button className="btn btn-primary" disabled={creatingProduct} style={{ padding: '12px' }}>
             {creatingProduct ? 'Creando...' : 'Crear producto'}
           </button>
@@ -386,13 +455,15 @@ function InventarioTab({ storeId }: { storeId: number }) {
             </div>
             {editingPromo === p.platform_key && (
               <div style={{ marginTop: '10px', borderTop: '1px solid var(--border)', paddingTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  value={promoUrl}
-                  onChange={e => setPromoUrl(e.target.value)}
-                  placeholder="URL de imagen para /promo (dejar vacía para usar la predeterminada)"
-                  style={{ flex: 1, padding: '8px' }}
-                />
-                <button onClick={() => savePromoImage(p.platform_key)} disabled={promoLoading} className="btn btn-primary" style={{ padding: '8px 12px' }}>
+                <div style={{ flex: 1 }}>
+                  <ImageUploadField
+                    label="Imagen para /promo (dejar vacía para la predeterminada)"
+                    value={promoUrl}
+                    onChange={setPromoUrl}
+                    placeholder="Pega una URL o súbela"
+                  />
+                </div>
+                <button onClick={() => savePromoImage(p.platform_key)} disabled={promoLoading} className="btn btn-primary" style={{ padding: '8px 12px', alignSelf: 'flex-end' }}>
                   {promoLoading ? 'Guardando...' : 'Guardar'}
                 </button>
               </div>

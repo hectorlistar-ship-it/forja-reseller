@@ -13,6 +13,7 @@ export interface Env {
   ENCRYPTION_KEY: string; // 32 random bytes, base64 - encrypts stored account passwords
   TELEGRAM_ADMIN_CHAT_ID?: string; // chat id that receives sale notifications
   STORE_URL?: string; // base URL of the store frontend
+  WORKER_URL?: string; // base URL of the worker api
   
   // Vars
   ENVIRONMENT: string;

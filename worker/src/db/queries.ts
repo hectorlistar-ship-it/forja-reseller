@@ -772,3 +772,26 @@ export async function setStorePromoConfig(db: Db, storeId: number, enabled?: num
   values.push(storeId);
   return db.run(`UPDATE stores SET ${fields.join(', ')} WHERE id = ?`, values);
 }
+
+// ============================================
+// UPLOADS  (imágenes subidas → URL directa)
+// ============================================
+
+export async function saveUpload(db: Db, data: {
+  id: string;
+  storeId: number;
+  mime: string;
+  bytes: ArrayBuffer;
+}) {
+  return db.run(
+    `INSERT INTO uploads (id, store_id, mime, data, created_at) VALUES (?, ?, ?, ?, ?)`,
+    [data.id, data.storeId, data.mime, data.bytes, Math.floor(Date.now() / 1000)]
+  );
+}
+
+export async function getUpload(db: Db, id: string) {
+  return db.first<{ id: string; store_id: number; mime: string; data: ArrayBuffer }>(
+    `SELECT id, store_id, mime, data FROM uploads WHERE id = ?`,
+    [id]
+  );
+}

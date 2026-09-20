@@ -100,8 +100,9 @@ botRoutes.post('/webhook/:storeId', async (c) => {
         [{ text: '🛍️ Comprar', url: CMD_URL(c.env, store.slug, '') }],
       ],
     };
+    const businessName = store.business_name || store.name || c.env.BUSINESS_NAME || 'Forja Store';
     const msg =
-      `🎉 ¡Hola${firstName ? ' ' + firstName : ''}! Bienvenido a *${c.env.BUSINESS_NAME}* 🚀\n\n` +
+      `🎉 ¡Hola${firstName ? ' ' + firstName : ''}! Bienvenido a *${businessName}* 🚀\n\n` +
       `Somos tu tienda de cuentas *Premium* con entrega inmediata.\n\n` +
       `👑 Streamings, música y más al mejor precio.\n` +
       `⚡ Activación al instante.\n` +

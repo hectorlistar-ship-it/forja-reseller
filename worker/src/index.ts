@@ -39,6 +39,21 @@ app.use('*', cors({
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', service: 'forja-reseller', timestamp: Date.now() }));
 
+// Public image uploads served from D1 (URL directa: /upload/{id})
+app.get('/upload/:id', async (c) => {
+  const db = createDb(c.env);
+  const id = c.req.param('id');
+  const row = await queries.getUpload(db, id as string);
+  if (!row) return c.text('Not found', 404);
+
+  const mime = row.mime || 'image/png';
+  const headers = {
+    'Content-Type': mime,
+    'Cache-Control': 'public, max-age=31536000, immutable',
+  };
+  return new Response(row.data as ArrayBuffer, { headers, status: 200 });
+});
+
 function clientIp(c: any): string {
   return c.req.header('CF-Connecting-IP') || c.req.header('X-Forwarded-For') || 'unknown';
 }
@@ -560,6 +575,36 @@ app.post('/api/admin/inventory/add', ...resellerAuth, async (c) => {
 
   const result = await queries.addAccounts(db, c.env, storeId, plataforma, cuentas);
   return c.json({ message: `${result.added} cuentas agregadas`, added: result.added });
+});
+
+// Subida de imagen → URL directa (se guarda en D1, sirve /upload/{id})
+app.post('/api/admin/upload', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const body = await c.req.json().catch(() => ({}));
+  const { data_base64, mime } = body;
+  if (!data_base64 || typeof data_base64 !== 'string') {
+    return c.json({ error: 'data_base64 requerido' }, 400);
+  }
+
+  // Máx ~2MB tras decodificar (D1 BLOB razonable)
+  const bin = atob(data_base64.replace(/^data:[^;]+;base64,/, ''));
+  if (bin.length > 2 * 1024 * 1024) {
+    return c.json({ error: 'La imagen es muy pesada (máx 2MB)' }, 413);
+  }
+
+  const bytes = new TextEncoder().encode(bin).buffer as ArrayBuffer;
+  const id = crypto.randomUUID().replace(/-/g, '');
+  const cleanMime = typeof mime === 'string' && /^image\/(png|jpe?g|webp|gif|avif)$/.test(mime)
+    ? mime
+    : 'image/png';
+
+  await queries.saveUpload(db, { id, storeId, mime: cleanMime, bytes });
+  const base = c.env.WORKER_URL || 'https://forja-reseller.hectorlistar.workers.dev';
+  return c.json({ url: `${base}/upload/${id}`, id }, 201);
 });
 
 // Alta de producto propio del vendedor (streaming, software, herramienta, curso, etc.)
