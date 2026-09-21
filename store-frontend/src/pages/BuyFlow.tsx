@@ -10,6 +10,8 @@ interface Platform {
   icon: string;
   price_usd: number;
   stock: number;
+  delivery_type?: string;
+  delivery_note?: string | null;
 }
 
 export function BuyFlow() {
@@ -51,7 +53,7 @@ export function BuyFlow() {
   }, [slug, platformKey]);
 
   const handlePlatformSelect = (p: any) => {
-    if (p.stock <= 0) {
+    if (p.delivery_type !== 'manual' && p.stock <= 0) {
       toast.error('Sin stock disponible');
       return;
     }
@@ -87,8 +89,14 @@ return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '24px 20px' }}>
       <div style={{ marginBottom: 24 }}>
         <Link to={`/tienda/${slug}`} style={{ color: 'rgb(var(--ring-strong))', textDecoration: 'none', fontSize: 14 }}>← Volver al catálogo</Link>
-        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 30, fontWeight: 500, marginTop: 12, marginBottom: 4 }}>Comprar cuenta</h1>
-        <p style={{ color: 'rgb(var(--muted))' }}>Paga con USDT y recibe tu cuenta al instante</p>
+        <h1 style={{ fontFamily: 'var(--font-serif)', fontSize: 30, fontWeight: 500, marginTop: 12, marginBottom: 4 }}>
+          {platform?.delivery_type === 'manual' ? 'Comprar producto' : 'Comprar cuenta'}
+        </h1>
+        <p style={{ color: 'rgb(var(--muted))' }}>
+          {platform?.delivery_type === 'manual'
+            ? 'Paga con USDT y el vendedor activará tu producto'
+            : 'Paga con USDT y recibe tu cuenta al instante'}
+        </p>
       </div>
 
       {step === 'select' && platforms.length > 0 && (
@@ -96,7 +104,7 @@ return (
           <h2 style={{ marginBottom: 16, fontSize: 18, fontFamily: 'var(--font-serif)', fontWeight: 500 }}>Selecciona plataforma</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
             {platforms
-              .filter((p: any) => p.stock > 0)
+              .filter((p: any) => p.delivery_type === 'manual' || p.stock > 0)
               .map((p: any) => (
                 <button
                   key={p.key}
@@ -112,7 +120,9 @@ return (
                   }}
                 >
                   <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 4 }}>{p.name}</div>
-                  <div style={{ color: 'rgb(var(--muted))', fontSize: 13 }}>${p.price_usd} USDT · {p.stock} disponibles</div>
+                  <div style={{ color: 'rgb(var(--muted))', fontSize: 13 }}>
+                    ${p.price_usd} USDT · {p.delivery_type === 'manual' ? 'entrega manual' : `${p.stock} disponibles`}
+                  </div>
                 </button>
               ))}
           </div>
@@ -134,6 +144,16 @@ return (
               <strong>@{binanceUser || '—'}</strong>
             </div>
           </div>
+
+          {platform.delivery_type === 'manual' && (
+            <div className="card shadow-ring-1" style={{ marginBottom: 20, background: 'rgb(var(--gold) / 0.1)', border: '1px solid rgb(var(--gold) / 0.35)' }}>
+              <h3 style={{ marginBottom: 8, fontSize: 15 }}>🕒 Entrega manual</h3>
+              <p style={{ margin: 0, fontSize: 13, color: 'rgb(var(--muted))' }}>
+                Este producto lo activa el vendedor después de confirmar tu pago.
+                {platform.delivery_note ? ` ${platform.delivery_note}` : ''}
+              </p>
+            </div>
+          )}
 
           <div className="card shadow-ring-1" style={{ marginBottom: 20 }}>
             <h3 style={{ marginBottom: 12, fontSize: 15 }}>Wallet de pago {storeName && `— ${storeName}`}</h3>

@@ -93,32 +93,20 @@ binanceRoutes.post('/callback', async (c) => {
   }
 
   // Now find available account and complete order
-  const account = await db.first(
-    `SELECT * FROM accounts 
-     WHERE store_id = ? AND platform_key = ? AND sold = 0
-     ORDER BY created_at ASC LIMIT 1`,
-    [payment.store_id, payment.platform_key]
-  );
-  
-  if (!account) {
-    console.error('[binance] No account available for verified payment:', payment.id);
-    return c.json({ message: 'Pago verificado pero sin stock disponible', ok: true });
-  }
-  
-  // Get platform config
+  // Get platform config (incluye tipo de entrega)
   const platform = await db.first(
-    `SELECT sp.sale_price_usd, sp.cost_price_usd, p.name
+    `SELECT sp.sale_price_usd, sp.cost_price_usd, sp.delivery_type, sp.delivery_note, p.name
      FROM store_platforms sp
      JOIN platforms p ON sp.platform_key = p.key
      WHERE sp.store_id = ? AND sp.platform_key = ?`,
     [payment.store_id, payment.platform_key]
   );
-  
+
   if (!platform) {
     console.error('[binance] Platform not found for payment:', payment.id);
     return c.json({ message: 'Pago verificado pero error de configuración', ok: true });
   }
-  
+
   // Determine client_id for order
   let orderClientId = clientId;
   if (!orderClientId) {
@@ -139,15 +127,51 @@ binanceRoutes.post('/callback', async (c) => {
       orderClientId = result.meta.last_row_id;
     }
   }
-  
-  // Claim the account atomically: `AND sold = 0` means only one concurrent
-  // callback can win this UPDATE, closing the race where two payments
-  // could otherwise be assigned the same account.
+
   const now = Math.floor(Date.now() / 1000);
   const priceUsd = platform.sale_price_usd;
   const costUsd = platform.cost_price_usd || 0;
   const profit = priceUsd - costUsd;
 
+  // ---- Entrega manual (ej: licencias de software que se activan con tiempo) ----
+  // No se reclama inventario; la orden queda pendiente y el vendedor la entrega
+  // desde el panel. El stock no aplica a este tipo de producto.
+  if (platform.delivery_type === 'manual') {
+    const orderResult = await db.run(
+      `INSERT INTO orders (store_id, client_id, platform_key, account_id, price_usd, cost_usd, profit_usd, binance_payment_id, delivery_type, delivery_note, status)
+       VALUES (?, ?, ?, NULL, ?, ?, ?, ?, 'manual', ?, 'pending_delivery')`,
+      [payment.store_id, orderClientId, payment.platform_key, priceUsd, costUsd, profit, payment.id, platform.delivery_note || null]
+    );
+
+    notifyTelegram(c.env, {
+      store_id: payment.store_id,
+      platform: payment.platform_key,
+      platform_name: platform.name,
+      client: binance_user,
+      amount: priceUsd,
+      account_email: null,
+      manual: true,
+    }).catch(console.error);
+
+    return c.json({ ok: true, message: 'Pago verificado. Entrega pendiente por el vendedor', order_id: orderResult.meta.last_row_id });
+  }
+
+  // ---- Entrega automática (cuentas en stock) ----
+  const account = await db.first(
+    `SELECT * FROM accounts 
+     WHERE store_id = ? AND platform_key = ? AND sold = 0
+     ORDER BY created_at ASC LIMIT 1`,
+    [payment.store_id, payment.platform_key]
+  );
+
+  if (!account) {
+    console.error('[binance] No account available for verified payment:', payment.id);
+    return c.json({ message: 'Pago verificado pero sin stock disponible', ok: true });
+  }
+
+  // Claim the account atomically: `AND sold = 0` means only one concurrent
+  // callback can win this UPDATE, closing the race where two payments
+  // could otherwise be assigned the same account.
   const claim = await db.run(
     `UPDATE accounts SET sold = 1, sold_at = ?, client_id = ? WHERE id = ? AND sold = 0`,
     [now, orderClientId, account.id]
@@ -158,8 +182,8 @@ binanceRoutes.post('/callback', async (c) => {
   }
 
   const orderResult = await db.run(
-    `INSERT INTO orders (store_id, client_id, platform_key, account_id, price_usd, cost_usd, profit_usd, binance_payment_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO orders (store_id, client_id, platform_key, account_id, price_usd, cost_usd, profit_usd, binance_payment_id, delivery_type, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'auto', 'completed')`,
     [payment.store_id, orderClientId, account.platform_key, account.id, priceUsd, costUsd, profit, payment.id]
   );
   await db.run(`UPDATE accounts SET order_id = ? WHERE id = ?`, [orderResult.meta.last_row_id, account.id]);
@@ -184,20 +208,28 @@ async function notifyTelegram(env: any, data: {
   platform_name: string;
   client: string;
   amount: number;
-  account_email: string;
+  account_email: string | null;
+  manual?: boolean;
 }) {
   try {
     // Get store info for Telegram chat_id
     // In production, store chat_id in store config
     const chatId = env.TELEGRAM_ADMIN_CHAT_ID; // Set in secrets
     if (!chatId) return;
-    
-    const text = `✅ *Nueva venta*\n\n` +
-      `Tienda: ${data.store_id}\n` +
-      `Plataforma: ${data.platform_name} (${data.platform})\n` +
-      `Cliente: @${data.client}\n` +
-      `Monto: $${data.amount} USDT\n` +
-      `Cuenta: ${data.account_email}`;
+
+    const text = data.manual
+      ? `🔔 *Nueva venta — entrega pendiente*\n\n` +
+        `Tienda: ${data.store_id}\n` +
+        `Producto: ${data.platform_name} (${data.platform})\n` +
+        `Cliente: @${data.client}\n` +
+        `Monto: $${data.amount} USDT\n\n` +
+        `Entra a tu panel → Pedidos y marca esta venta como entregada.`
+      : `✅ *Nueva venta*\n\n` +
+        `Tienda: ${data.store_id}\n` +
+        `Plataforma: ${data.platform_name} (${data.platform})\n` +
+        `Cliente: @${data.client}\n` +
+        `Monto: $${data.amount} USDT\n` +
+        `Cuenta: ${data.account_email}`;
     
     await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',

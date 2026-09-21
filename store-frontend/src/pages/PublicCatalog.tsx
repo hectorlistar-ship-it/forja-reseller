@@ -237,6 +237,7 @@ export function PublicCatalog() {
 }
 
 function PlatformCard({ platform, slug }: { platform: any; slug: string }) {
+  const isManual = platform.delivery_type === 'manual';
   return (
     <div className="group shadow-editorial" style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, borderRadius: 'var(--radius)', overflow: 'hidden', background: 'rgb(var(--surface))', transition: 'transform 0.2s, box-shadow 0.2s', textDecoration: 'none' }}>
       <div style={{ position: 'relative', aspectRatio: '16 / 9', width: '100%', overflow: 'hidden', background: 'rgb(var(--surface-2))' }}>
@@ -244,10 +245,16 @@ function PlatformCard({ platform, slug }: { platform: any; slug: string }) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 6, padding: 16 }}>
         <h3 style={{ margin: 0, fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 500, lineHeight: 1.2 }}>{platform.name}</h3>
+        <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: isManual ? 'rgb(var(--gold))' : 'rgb(var(--muted))' }}>
+          {isManual ? '🕒 Entrega manual' : '⚡ Entrega automática'}
+        </span>
+        {isManual && platform.delivery_note && (
+          <p style={{ margin: 0, fontSize: 12, color: 'rgb(var(--subtle))', lineHeight: 1.4 }}>{platform.delivery_note}</p>
+        )}
         <div style={{ marginTop: 'auto', paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 500, color: 'rgb(var(--fg))' }}>${platform.price_usd} <span style={{ fontSize: 13, color: 'rgb(var(--subtle))', fontFamily: 'var(--font-sans)' }}>USDT</span></span>
-          <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: platform.stock > 0 ? 'rgb(124 245 155)' : 'rgb(var(--bad))' }}>
-            {platform.stock > 0 ? `${platform.stock} disponibles` : 'Sin stock'}
+          <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: isManual ? 'rgb(var(--gold))' : platform.stock > 0 ? 'rgb(124 245 155)' : 'rgb(var(--bad))' }}>
+            {isManual ? 'Disponible' : platform.stock > 0 ? `${platform.stock} disponibles` : 'Sin stock'}
           </span>
         </div>
         <Link to={`/tienda/${slug}/comprar/${platform.key}`} className="btn btn-primary" style={{ marginTop: 12, width: '100%', padding: '11px 16px' }}>

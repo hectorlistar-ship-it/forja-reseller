@@ -5,6 +5,8 @@ export function BinancePayment() {
   const { paymentId } = useParams<{ paymentId: string }>();
   const [status, setStatus] = useState<'checking' | 'verified' | 'failed'>('checking');
   const [message, setMessage] = useState('Verificando tu pago...');
+  const [deliveryType, setDeliveryType] = useState<string | null>(null);
+  const [deliveryNote, setDeliveryNote] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkPayment() {
@@ -24,8 +26,11 @@ export function BinancePayment() {
         
         if (data.status === 'verified') {
           setStatus('verified');
-          setMessage('¡Pago verificado! Tu cuenta ha sido asignada.');
-          // We would need to fetch the order details here
+          setDeliveryType(data.delivery_type || 'auto');
+          setDeliveryNote(data.delivery_note || null);
+          setMessage(data.delivery_type === 'manual'
+            ? '¡Pago verificado! El vendedor activará tu producto en breve.'
+            : '¡Pago verificado! Tu cuenta ha sido asignada.');
         } else {
           setStatus('checking');
           setMessage('Pago pendiente de verificación. El sistema revisa automáticamente cada 2 minutos.');
@@ -87,9 +92,11 @@ export function BinancePayment() {
 
         {status === 'verified' && (
           <div className="card" style={{ textAlign: 'left', marginBottom: '24px', background: 'rgb(var(--surface-2))' }}>
-            <h3 style={{ marginBottom: '12px', fontSize: 15 }}>Tu cuenta</h3>
+            <h3 style={{ marginBottom: '12px', fontSize: 15 }}>{deliveryType === 'manual' ? 'Tu producto' : 'Tu cuenta'}</h3>
             <p style={{ color: 'rgb(var(--muted))', marginBottom: '16px' }}>
-              Tu cuenta ha sido asignada y está disponible en <Link to="/mis-compras" style={{ color: 'rgb(var(--ring-strong))' }}>Mis compras</Link>
+              {deliveryType === 'manual'
+                ? <>El vendedor activará tu producto y lo verás en <Link to="/mis-compras" style={{ color: 'rgb(var(--ring-strong))' }}>Mis compras</Link>.{deliveryNote ? ` ${deliveryNote}` : ''}</>
+                : <>Tu cuenta ha sido asignada y está disponible en <Link to="/mis-compras" style={{ color: 'rgb(var(--ring-strong))' }}>Mis compras</Link>.</>}
             </p>
             <Link to="/mis-compras" className="btn btn-primary" style={{ width: '100%' }}>
               Ver mis compras

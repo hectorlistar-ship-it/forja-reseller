@@ -42,8 +42,10 @@ storeRoutes.get('/catalog', ...clientAuth, async (c) => {
       icon: p.icon,
       price_usd: p.sale_price_usd,
       stock: inv?.available ?? 0,
+      delivery_type: p.delivery_type || 'auto',
+      delivery_note: p.delivery_note || null,
     };
-  }).filter(p => p.stock > 0);
+  }).filter(p => p.delivery_type === 'manual' || p.stock > 0);
 
   return c.json({ platforms: catalog });
 });
@@ -79,7 +81,8 @@ storeRoutes.post('/buy', ...clientAuth, async (c) => {
     [storeId, platform_key]
   );
 
-  if (!available || available.c === 0) {
+  const isManual = platform.delivery_type === 'manual';
+  if (!isManual && (!available || available.c === 0)) {
     return c.json({ error: 'Sin stock disponible' }, 404);
   }
 
@@ -105,7 +108,11 @@ storeRoutes.post('/buy', ...clientAuth, async (c) => {
     trc20_address: store?.trc20_address || null,
     store_name: store?.name || null,
     binance_user,
-    message: `Envía ${platform.sale_price_usd} USDT a la wallet y usa el botón "Verificar pago" cuando termines.`,
+    delivery_type: platform.delivery_type || 'auto',
+    delivery_note: platform.delivery_note || null,
+    message: isManual
+      ? `Envía ${platform.sale_price_usd} USDT a la wallet. Al verificar el pago, el vendedor activará tu producto.`
+      : `Envía ${platform.sale_price_usd} USDT a la wallet y usa el botón "Verificar pago" cuando termines.`,
   });
 });
 
@@ -133,8 +140,24 @@ storeRoutes.post('/verify-payment', ...clientAuth, async (c) => {
     return c.json({ error: 'Pago no encontrado' }, 404);
   }
 
+  // Si ya está verificado, informamos el tipo de entrega para que el cliente
+  // sepa si recibió su cuenta al instante o si el vendedor la activará.
+  let deliveryType: string | null = null;
+  let deliveryNote: string | null = null;
+  if (payment.status === 'verified' && payment.platform_key) {
+    const sp = await db.first<any>(
+      `SELECT delivery_type, delivery_note FROM store_platforms
+       WHERE store_id = ? AND platform_key = ?`,
+      [storeId, payment.platform_key]
+    );
+    deliveryType = sp?.delivery_type || 'auto';
+    deliveryNote = sp?.delivery_note || null;
+  }
+
   return c.json({
     status: payment.status,
+    delivery_type: deliveryType,
+    delivery_note: deliveryNote,
     message: payment.status === 'verified' ? 'Pago verificado' : 'Pendiente de verificación',
   });
 });
@@ -149,7 +172,7 @@ storeRoutes.get('/my-purchases', ...clientAuth, async (c) => {
     `SELECT o.*, p.name as platform_name, p.icon as platform_icon, a.email, a.password
      FROM orders o
      JOIN platforms p ON o.platform_key = p.key
-     JOIN accounts a ON o.account_id = a.id
+     LEFT JOIN accounts a ON o.account_id = a.id
      WHERE o.client_id = ?
      ORDER BY o.created_at DESC`,
     [user.userId]
@@ -157,7 +180,7 @@ storeRoutes.get('/my-purchases', ...clientAuth, async (c) => {
 
   const orders = await Promise.all(rows.map(async (row) => ({
     ...row,
-    password: await decryptAccountPassword(c.env, row.password),
+    password: row.password ? await decryptAccountPassword(c.env, row.password) : null,
   })));
 
   return c.json({ orders });
@@ -173,7 +196,7 @@ storeRoutes.get('/purchase/:orderId', ...clientAuth, async (c) => {
     `SELECT o.*, p.name as platform_name, a.email, a.password
      FROM orders o
      JOIN platforms p ON o.platform_key = p.key
-     JOIN accounts a ON o.account_id = a.id
+     LEFT JOIN accounts a ON o.account_id = a.id
      WHERE o.id = ? AND o.client_id = ?`,
     [orderId, user.userId]
   );
@@ -182,11 +205,27 @@ storeRoutes.get('/purchase/:orderId', ...clientAuth, async (c) => {
     return c.json({ error: 'Compra no encontrada' }, 404);
   }
 
+  // Entrega manual: aún no hay cuenta, pero sí el detalle que dejó el vendedor.
+  if (!order.password) {
+    return c.json({
+      platform: order.platform_key,
+      platform_name: order.platform_name,
+      delivery_type: order.delivery_type,
+      status: order.status,
+      delivery_info: order.delivery_info || null,
+      delivery_note: order.delivery_note || null,
+      email: null,
+      password: null,
+    });
+  }
+
   const password = await decryptAccountPassword(c.env, order.password);
 
   return c.json({
     platform: order.platform_key,
     platform_name: order.platform_name,
+    delivery_type: order.delivery_type,
+    status: order.status,
     email: order.email,
     password,
   });

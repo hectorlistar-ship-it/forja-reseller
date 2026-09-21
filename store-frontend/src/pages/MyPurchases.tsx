@@ -10,8 +10,13 @@ interface Order {
   platform_icon: string;
   price_usd: number;
   created_at: number;
-  email: string;
-  password: string;
+  email: string | null;
+  password: string | null;
+  delivery_type?: string;
+  delivery_note?: string | null;
+  delivery_info?: string | null;
+  delivered_at?: number | null;
+  status?: string;
 }
 
 export function MyPurchases() {
@@ -108,28 +113,53 @@ function OrderCard({ order, onToggle, isOpen }: { order: Order; onToggle: () => 
 
       {isOpen && (
         <div style={{ borderTop: '1px solid rgb(var(--border))', padding: '16px', background: 'rgb(var(--surface-2))', borderRadius: '0 0 var(--radius) var(--radius)' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+          {order.delivery_type === 'manual' && order.status === 'pending_delivery' ? (
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: 'rgb(var(--subtle))', marginBottom: '4px', textTransform: 'uppercase' }}>Email</label>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <code style={{ flex: 1, background: 'rgb(var(--bg))', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgb(var(--border))', fontSize: '13px' }}>{order.email}</code>
-                <button onClick={() => copyToClipboard(order.email, 'Email')} className="btn btn-ghost" style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}>Copiar</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span className="badge" style={{ background: 'rgb(var(--gold) / 0.15)', color: 'rgb(var(--gold))', border: '1px solid rgb(var(--gold) / 0.35)' }}>🕒 Pendiente de entrega</span>
+              </div>
+              <p style={{ margin: 0, color: 'rgb(var(--muted))', fontSize: 14, lineHeight: 1.6 }}>
+                El vendedor está activando tu producto. En cuanto lo entregue, aparecerá aquí automáticamente.
+                {order.delivery_note ? ` ${order.delivery_note}` : ''}
+              </p>
+            </div>
+          ) : order.delivery_type === 'manual' ? (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span className="badge badge-ok">✅ Entregado</span>
+              </div>
+              <label style={{ display: 'block', fontSize: '11px', color: 'rgb(var(--subtle))', marginBottom: '4px', textTransform: 'uppercase' }}>Tu producto</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                <code style={{ flex: 1, background: 'rgb(var(--bg))', padding: '10px 12px', borderRadius: '6px', border: '1px solid rgb(var(--border))', fontSize: '13px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{order.delivery_info || 'Producto entregado.'}</code>
+                <button onClick={() => copyToClipboard(order.delivery_info || '', 'Producto')} className="btn btn-ghost" style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}>Copiar</button>
               </div>
             </div>
-            <div>
-              <label style={{ display: 'block', fontSize: '11px', color: 'rgb(var(--subtle))', marginBottom: '4px', textTransform: 'uppercase' }}>Contraseña</label>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <code style={{ flex: 1, background: 'rgb(var(--bg))', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgb(var(--border))', fontSize: '13px' }}>{order.password}</code>
-                <button onClick={() => copyToClipboard(order.password, 'Contraseña')} className="btn btn-ghost" style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}>Copiar</button>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'rgb(var(--subtle))', marginBottom: '4px', textTransform: 'uppercase' }}>Email</label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <code style={{ flex: 1, background: 'rgb(var(--bg))', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgb(var(--border))', fontSize: '13px' }}>{order.email}</code>
+                    <button onClick={() => copyToClipboard(order.email || '', 'Email')} className="btn btn-ghost" style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}>Copiar</button>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'rgb(var(--subtle))', marginBottom: '4px', textTransform: 'uppercase' }}>Contraseña</label>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <code style={{ flex: 1, background: 'rgb(var(--bg))', padding: '8px 12px', borderRadius: '6px', border: '1px solid rgb(var(--border))', fontSize: '13px' }}>{order.password}</code>
+                    <button onClick={() => copyToClipboard(order.password || '', 'Contraseña')} className="btn btn-ghost" style={{ padding: '8px 12px', fontSize: '12px', whiteSpace: 'nowrap' }}>Copiar</button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
 
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-            <button onClick={() => copyToClipboard(`${order.email} / ${order.password}`, 'Credenciales')} className="btn btn-primary" style={{ padding: '10px 16px' }}>
-              Copiar todo
-            </button>
-          </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button onClick={() => copyToClipboard(`${order.email} / ${order.password}`, 'Credenciales')} className="btn btn-primary" style={{ padding: '10px 16px' }}>
+                  Copiar todo
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -96,6 +96,8 @@ export async function addStoreProduct(db: Db, store: { id: number; slug: string 
   salePrice?: number;
   imageUrl?: string;
   icon?: string;
+  deliveryType?: string;
+  deliveryNote?: string;
 }): Promise<{ platformKey: string; created: boolean }> {
   let baseKey = slugify(data.name);
   let platformKey = baseKey;
@@ -118,14 +120,18 @@ export async function addStoreProduct(db: Db, store: { id: number; slug: string 
     created = true;
   }
 
+  const deliveryType = data.deliveryType === 'manual' ? 'manual' : 'auto';
   await db.run(
-    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active, promo_image_url)
-     VALUES (?, ?, ?, ?, 1, ?)
+    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active, promo_image_url, delivery_type, delivery_note)
+     VALUES (?, ?, ?, ?, 1, ?, ?, ?)
      ON CONFLICT(store_id, platform_key) DO UPDATE SET
        cost_price_usd = excluded.cost_price_usd,
        sale_price_usd = excluded.sale_price_usd,
-       is_active = 1`,
-    [store.id, platformKey, data.costPrice ?? null, data.salePrice ?? null, data.imageUrl || null]
+       is_active = 1,
+       delivery_type = excluded.delivery_type,
+       delivery_note = excluded.delivery_note`,
+    [store.id, platformKey, data.costPrice ?? null, data.salePrice ?? null, data.imageUrl || null,
+     deliveryType, data.deliveryNote || null]
   );
 
   return { platformKey, created };
@@ -243,16 +249,30 @@ export async function upsertPlatform(db: Db, data: {
 }
 
 // Store platform overrides
-export async function setStorePlatformPrice(db: Db, storeId: number, platformKey: string, costPrice?: number, salePrice?: number, isActive = 1, promoImageUrl?: string | null) {
+export async function setStorePlatformPrice(
+  db: Db,
+  storeId: number,
+  platformKey: string,
+  costPrice?: number,
+  salePrice?: number,
+  isActive = 1,
+  promoImageUrl?: string | null,
+  deliveryType?: string,
+  deliveryNote?: string | null,
+) {
+  const type = deliveryType === 'manual' ? 'manual' : deliveryType === 'auto' ? 'auto' : null;
   return db.run(
-    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active, promo_image_url)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO store_platforms (store_id, platform_key, cost_price_usd, sale_price_usd, is_active, promo_image_url, delivery_type, delivery_note)
+     VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, 'auto'), ?)
      ON CONFLICT(store_id, platform_key) DO UPDATE SET
        cost_price_usd = excluded.cost_price_usd,
        sale_price_usd = excluded.sale_price_usd,
        is_active = excluded.is_active,
-       promo_image_url = COALESCE(excluded.promo_image_url, store_platforms.promo_image_url)`,
-    [storeId, platformKey, costPrice ?? null, salePrice ?? null, isActive, promoImageUrl ?? null]
+       promo_image_url = COALESCE(excluded.promo_image_url, store_platforms.promo_image_url),
+       delivery_type = COALESCE(?, store_platforms.delivery_type),
+       delivery_note = COALESCE(?, store_platforms.delivery_note)`,
+    [storeId, platformKey, costPrice ?? null, salePrice ?? null, isActive, promoImageUrl ?? null,
+     type, deliveryNote ?? null, type, deliveryNote !== undefined ? (deliveryNote || null) : null]
   );
 }
 
@@ -495,27 +515,44 @@ export interface OrderInput {
   storeId: number;
   clientId: number;
   platformKey: string;
-  accountId: number;
+  accountId: number | null;
   priceUsd: number;
   costUsd: number;
   binancePaymentId?: number;
+  deliveryType?: 'auto' | 'manual';
+  deliveryNote?: string | null;
+  status?: string;
 }
 
 export async function createOrder(db: Db, data: OrderInput) {
   const profit = data.priceUsd - data.costUsd;
+  const deliveryType = data.deliveryType === 'manual' ? 'manual' : 'auto';
+  const status = data.status || 'completed';
   return db.run(
-    `INSERT INTO orders (store_id, client_id, platform_key, account_id, price_usd, cost_usd, profit_usd, binance_payment_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [data.storeId, data.clientId, data.platformKey, data.accountId, data.priceUsd, data.costUsd, profit, data.binancePaymentId || null]
+    `INSERT INTO orders (store_id, client_id, platform_key, account_id, price_usd, cost_usd, profit_usd, binance_payment_id, delivery_type, delivery_note, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [data.storeId, data.clientId, data.platformKey, data.accountId, data.priceUsd, data.costUsd, profit,
+     data.binancePaymentId || null, deliveryType, data.deliveryNote || null, status]
+  );
+}
+
+// El vendedor marca una orden de entrega manual como entregada, dejando el
+// detalle de lo que entregó (licencia, credenciales, instrucciones...).
+export async function deliverOrder(db: Db, orderId: number, storeId: number, deliveryInfo: string) {
+  return db.run(
+    `UPDATE orders SET status = 'completed', delivered_at = ?, delivery_info = ?
+     WHERE id = ? AND store_id = ? AND status = 'pending_delivery'`,
+    [Math.floor(Date.now() / 1000), deliveryInfo, orderId, storeId]
   );
 }
 
 export async function getOrdersByStore(db: Db, storeId: number, limit = 100) {
   return db.all(
-    `SELECT o.*, c.username as client_username, p.name as platform_name
+    `SELECT o.*, c.username as client_username, p.name as platform_name, a.email as account_email
      FROM orders o
      JOIN clients c ON o.client_id = c.id
      JOIN platforms p ON o.platform_key = p.key
+     LEFT JOIN accounts a ON o.account_id = a.id
      WHERE o.store_id = ?
      ORDER BY o.created_at DESC LIMIT ?`,
     [storeId, limit]

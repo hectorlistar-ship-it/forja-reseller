@@ -319,7 +319,13 @@ function InventarioTab({ storeId }: { storeId: number }) {
   const [newCost, setNewCost] = useState('');
   const [newSale, setNewSale] = useState('');
   const [newImage, setNewImage] = useState('');
+  const [newDeliveryType, setNewDeliveryType] = useState('auto');
+  const [newDeliveryNote, setNewDeliveryNote] = useState('');
   const [creatingProduct, setCreatingProduct] = useState(false);
+  const [editingDelivery, setEditingDelivery] = useState<string | null>(null);
+  const [editDeliveryType, setEditDeliveryType] = useState('auto');
+  const [editDeliveryNote, setEditDeliveryNote] = useState('');
+  const [savingDelivery, setSavingDelivery] = useState(false);
 
   const load = useCallback(() => {
     api.get<{ platforms: any[] }>(`/api/admin/inventory?store_id=${storeId}`)
@@ -343,6 +349,23 @@ function InventarioTab({ storeId }: { storeId: number }) {
     }
   };
 
+  const saveDelivery = async (platformKey: string) => {
+    setSavingDelivery(true);
+    try {
+      await api.put(`/api/admin/inventory/${platformKey}?store_id=${storeId}`, {
+        delivery_type: editDeliveryType,
+        delivery_note: editDeliveryNote,
+      });
+      toast.success('Tipo de entrega actualizado');
+      setEditingDelivery(null);
+      load();
+    } catch (err: any) {
+      toast.error(err.message || 'Error al guardar');
+    } finally {
+      setSavingDelivery(false);
+    }
+  };
+
   const createProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     const sale = Number(newSale);
@@ -358,9 +381,12 @@ function InventarioTab({ storeId }: { storeId: number }) {
         cost_price_usd: newCost === '' ? 0 : Number(newCost),
         sale_price_usd: sale,
         image_url: newImage.trim() || undefined,
+        delivery_type: newDeliveryType,
+        delivery_note: newDeliveryType === 'manual' ? newDeliveryNote.trim() : undefined,
       });
       toast.success('Producto agregado a tu tienda');
       setNewName(''); setNewCost(''); setNewSale(''); setNewImage('');
+      setNewDeliveryType('auto'); setNewDeliveryNote('');
       setShowNewProduct(false);
       load();
     } catch (err: any) {
@@ -418,6 +444,21 @@ function InventarioTab({ storeId }: { storeId: number }) {
             onChange={setNewImage}
             placeholder="Pega una URL o súbela"
           />
+          <div>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '13px', color: 'var(--muted)' }}>Tipo de entrega</label>
+            <select value={newDeliveryType} onChange={e => setNewDeliveryType(e.target.value)} style={{ width: '100%', padding: '10px' }}>
+              <option value="auto">⚡ Automática — el cliente recibe la cuenta al pagar</option>
+              <option value="manual">🕒 Con tiempo (manual) — tú la activas/entregas después</option>
+            </select>
+            {newDeliveryType === 'manual' && (
+              <input
+                value={newDeliveryNote}
+                onChange={e => setNewDeliveryNote(e.target.value)}
+                placeholder="Ej: Licencia de 30 días, se activa en menos de 1 hora"
+                style={{ width: '100%', padding: '10px', marginTop: '8px' }}
+              />
+            )}
+          </div>
           <button className="btn btn-primary" disabled={creatingProduct} style={{ padding: '12px' }}>
             {creatingProduct ? 'Creando...' : 'Crear producto'}
           </button>
@@ -440,10 +481,22 @@ function InventarioTab({ storeId }: { storeId: number }) {
               <div>
                 <div style={{ fontWeight: 600 }}>{p.name}</div>
                 <div style={{ fontSize: '13px', color: 'var(--muted)' }}>${p.sale_price_usd} USDT · costo ${p.cost_price_usd}</div>
+                <div style={{ fontSize: '12px', marginTop: '4px' }}>
+                  {p.delivery_type === 'manual'
+                    ? <span style={{ color: 'rgb(var(--gold))' }}>🕒 Entrega manual{p.delivery_note ? ` — ${p.delivery_note}` : ''}</span>
+                    : <span style={{ color: 'var(--muted)' }}>⚡ Entrega automática</span>}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '13px' }}>
                 <span className="badge badge-ok">{p.stock} disponibles</span>
                 <span style={{ color: 'var(--muted)' }}>{p.sold} vendidas</span>
+                <button
+                  onClick={() => { setEditingDelivery(editingDelivery === p.platform_key ? null : p.platform_key); setEditDeliveryType(p.delivery_type || 'auto'); setEditDeliveryNote(p.delivery_note || ''); }}
+                  className="btn btn-ghost"
+                  style={{ padding: '4px 8px', fontSize: '12px' }}
+                >
+                  ⚙️ Entrega
+                </button>
                 <button
                   onClick={() => { setEditingPromo(editingPromo === p.platform_key ? null : p.platform_key); setPromoUrl(p.promo_image_url || ''); }}
                   className="btn btn-ghost"
@@ -453,6 +506,25 @@ function InventarioTab({ storeId }: { storeId: number }) {
                 </button>
               </div>
             </div>
+            {editingDelivery === p.platform_key && (
+              <div style={{ marginTop: '10px', borderTop: '1px solid var(--border)', paddingTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <select value={editDeliveryType} onChange={e => setEditDeliveryType(e.target.value)} style={{ padding: '10px' }}>
+                  <option value="auto">⚡ Automática — el cliente recibe la cuenta al pagar</option>
+                  <option value="manual">🕒 Con tiempo (manual) — tú la activas/entregas después</option>
+                </select>
+                {editDeliveryType === 'manual' && (
+                  <input
+                    value={editDeliveryNote}
+                    onChange={e => setEditDeliveryNote(e.target.value)}
+                    placeholder="Ej: Licencia de 30 días, se activa en menos de 1 hora"
+                    style={{ padding: '10px' }}
+                  />
+                )}
+                <button onClick={() => saveDelivery(p.platform_key)} disabled={savingDelivery} className="btn btn-primary" style={{ padding: '8px 12px', alignSelf: 'flex-start' }}>
+                  {savingDelivery ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            )}
             {editingPromo === p.platform_key && (
               <div style={{ marginTop: '10px', borderTop: '1px solid var(--border)', paddingTop: '10px', display: 'flex', gap: '8px', alignItems: 'center' }}>
                 <div style={{ flex: 1 }}>
@@ -556,39 +628,115 @@ function AddAccountsForm({ storeId, onAdded }: { storeId: number; onAdded: () =>
 
 function PedidosTab({ storeId }: { storeId: number }) {
   const [orders, setOrders] = useState<any[]>([]);
+  const [deliveringId, setDeliveringId] = useState<number | null>(null);
+  const [deliveryInfo, setDeliveryInfo] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.get<{ orders: any[] }>(`/api/admin/orders?store_id=${storeId}`)
       .then(d => setOrders(d.orders || []))
       .catch(err => toast.error(err.message || 'Error al cargar pedidos'));
   }, [storeId]);
 
+  useEffect(() => { load(); }, [load]);
+
+  const deliver = async (orderId: number) => {
+    if (!deliveryInfo.trim()) {
+      toast.error('Escribe lo que entregas al cliente');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.post(`/api/admin/orders/${orderId}/deliver?store_id=${storeId}`, { delivery_info: deliveryInfo.trim() });
+      toast.success('Pedido entregado');
+      setDeliveringId(null);
+      setDeliveryInfo('');
+      load();
+    } catch (err: any) {
+      toast.error(err.message || 'Error al entregar');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (orders.length === 0) return <p style={{ color: 'var(--muted)' }}>Aún no hay pedidos.</p>;
 
+  const pending = orders.filter((o: any) => o.status === 'pending_delivery');
+
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-        <thead>
-          <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>
-            <th style={{ padding: '8px' }}>Cliente</th>
-            <th style={{ padding: '8px' }}>Plataforma</th>
-            <th style={{ padding: '8px' }}>Precio</th>
-            <th style={{ padding: '8px' }}>Ganancia</th>
-            <th style={{ padding: '8px' }}>Fecha</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o: any) => (
-            <tr key={o.id} style={{ borderBottom: '1px solid var(--line)' }}>
-              <td style={{ padding: '8px' }}>{o.client_username}</td>
-              <td style={{ padding: '8px' }}>{o.platform_name}</td>
-              <td style={{ padding: '8px' }}>${o.price_usd}</td>
-              <td style={{ padding: '8px' }}>${o.profit_usd}</td>
-              <td style={{ padding: '8px' }}>{new Date(o.created_at * 1000).toLocaleString('es-MX')}</td>
+    <div>
+      {pending.length > 0 && (
+        <div className="card" style={{ marginBottom: '14px', background: 'rgb(var(--gold) / 0.12)', border: '1px solid rgb(var(--gold) / 0.35)' }}>
+          🔔 Tienes <b>{pending.length}</b> pedido(s) de entrega manual pendientes. Entrégalos para que el cliente los reciba.
+        </div>
+      )}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+          <thead>
+            <tr style={{ textAlign: 'left', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>
+              <th style={{ padding: '8px' }}>Cliente</th>
+              <th style={{ padding: '8px' }}>Producto</th>
+              <th style={{ padding: '8px' }}>Precio</th>
+              <th style={{ padding: '8px' }}>Ganancia</th>
+              <th style={{ padding: '8px' }}>Entrega</th>
+              <th style={{ padding: '8px' }}>Fecha</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {orders.map((o: any) => (
+              <>
+                <tr key={o.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                  <td style={{ padding: '8px' }}>{o.client_username}</td>
+                  <td style={{ padding: '8px' }}>{o.platform_name}</td>
+                  <td style={{ padding: '8px' }}>${o.price_usd}</td>
+                  <td style={{ padding: '8px' }}>${o.profit_usd}</td>
+                  <td style={{ padding: '8px' }}>
+                    {o.status === 'pending_delivery' ? (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span style={{ color: 'rgb(var(--gold))', fontSize: '13px' }}>🕒 Pendiente</span>
+                        <button
+                          onClick={() => { setDeliveringId(deliveringId === o.id ? null : o.id); setDeliveryInfo(''); }}
+                          className="btn btn-primary"
+                          style={{ padding: '4px 10px', fontSize: '12px' }}
+                        >
+                          Entregar
+                        </button>
+                      </div>
+                    ) : o.delivery_type === 'manual' ? (
+                      <span style={{ color: 'rgb(var(--ok))', fontSize: '13px' }}>✅ Entregado</span>
+                    ) : (
+                      <span style={{ color: 'var(--muted)', fontSize: '13px' }}>⚡ Automática</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '8px' }}>{new Date(o.created_at * 1000).toLocaleString('es-MX')}</td>
+                </tr>
+                {deliveringId === o.id && (
+                  <tr key={`${o.id}-deliver`} style={{ borderBottom: '1px solid var(--line)' }}>
+                    <td colSpan={6} style={{ padding: '10px 8px', background: 'rgb(var(--surface-2))' }}>
+                      <label style={{ display: 'block', fontSize: '12px', color: 'var(--muted)', marginBottom: '6px' }}>
+                        Lo que entregas al cliente (licencia, clave, credenciales, instrucciones...)
+                      </label>
+                      <textarea
+                        value={deliveryInfo}
+                        onChange={e => setDeliveryInfo(e.target.value)}
+                        rows={3}
+                        placeholder="Ej: Licencia: XXXX-XXXX-XXXX — activa por 30 días"
+                        style={{ width: '100%', padding: '10px', fontFamily: 'ui-monospace, monospace', fontSize: '13px' }}
+                      />
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                        <button onClick={() => deliver(o.id)} disabled={saving} className="btn btn-primary" style={{ padding: '8px 16px' }}>
+                          {saving ? 'Guardando...' : 'Marcar como entregado'}
+                        </button>
+                        <button onClick={() => setDeliveringId(null)} className="btn btn-ghost" style={{ padding: '8px 16px' }}>Cancelar</button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

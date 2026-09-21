@@ -85,8 +85,10 @@ app.get('/api/public/catalog/:slug', async (c) => {
       image_url: p.image_url,
       price_usd: p.sale_price_usd,
       stock: inv?.available ?? 0,
+      delivery_type: p.delivery_type || 'auto',
+      delivery_note: p.delivery_note || null,
     };
-  }).filter(p => p.stock > 0);
+  }).filter(p => p.delivery_type === 'manual' || p.stock > 0);
 
   return c.json({
     store: {
@@ -615,7 +617,7 @@ app.post('/api/admin/inventory/product', ...resellerAuth, async (c) => {
   if (typeof storeId !== 'number') return storeId;
 
   const body = await c.req.json();
-  const { name, type, cost_price_usd, sale_price_usd, image_url, icon } = body;
+  const { name, type, cost_price_usd, sale_price_usd, image_url, icon, delivery_type, delivery_note } = body;
 
   if (!name || !String(name).trim()) {
     return c.json({ error: 'El nombre del producto es requerido' }, 400);
@@ -634,6 +636,8 @@ app.post('/api/admin/inventory/product', ...resellerAuth, async (c) => {
     salePrice: Number(sale_price_usd),
     imageUrl: image_url || undefined,
     icon: icon || undefined,
+    deliveryType: delivery_type === 'manual' ? 'manual' : 'auto',
+    deliveryNote: delivery_note || undefined,
   });
 
   return c.json({
@@ -660,7 +664,9 @@ app.put('/api/admin/inventory/:platformKey', ...resellerAuth, async (c) => {
     body.cost_price_usd !== undefined ? Number(body.cost_price_usd) : undefined,
     body.sale_price_usd !== undefined ? Number(body.sale_price_usd) : undefined,
     body.is_active !== undefined ? Number(body.is_active) : 1,
-    body.promo_image_url !== undefined ? (body.promo_image_url || null) : undefined
+    body.promo_image_url !== undefined ? (body.promo_image_url || null) : undefined,
+    body.delivery_type !== undefined ? String(body.delivery_type) : undefined,
+    body.delivery_note !== undefined ? String(body.delivery_note) : undefined
   );
 
   return c.json({ message: 'Plataforma actualizada' });
@@ -676,6 +682,28 @@ app.get('/api/admin/orders', ...resellerAuth, async (c) => {
 
   const orders = await queries.getOrdersByStore(db, storeId, limit);
   return c.json({ orders });
+});
+
+// Marcar un pedido de entrega manual como entregado (licencia, credenciales...)
+app.post('/api/admin/orders/:orderId/deliver', ...resellerAuth, async (c) => {
+  const db = createDb(c.env);
+  const user = c.get('user');
+  const storeId = await resolveStoreId(c, db, user);
+  if (typeof storeId !== 'number') return storeId;
+
+  const orderId = Number(c.req.param('orderId'));
+  const body = await c.req.json().catch(() => ({}));
+  const deliveryInfo = String(body.delivery_info || '').trim();
+  if (!deliveryInfo) {
+    return c.json({ error: 'Escribe lo que entregas al cliente (licencia, cuenta, instrucciones...)' }, 400);
+  }
+
+  const result = await queries.deliverOrder(db, orderId, storeId, deliveryInfo);
+  if (!result.meta.changes) {
+    return c.json({ error: 'Pedido no encontrado o ya fue entregado' }, 404);
+  }
+
+  return c.json({ message: 'Pedido marcado como entregado' });
 });
 
 // Clients
